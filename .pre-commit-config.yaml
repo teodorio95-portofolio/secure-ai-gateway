@@ -1,0 +1,34 @@
+# Fast local quality gates (anti-slop).
+#   pip install pre-commit && pre-commit install        # enable on this repo
+#   pre-commit run --all-files                          # run once over everything
+#   pre-commit autoupdate                               # bump the pinned revs
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        # Helm Go-templates are not valid YAML — skip the rendered templates.
+        exclude: ^charts/[^/]+/templates/
+      - id: check-added-large-files
+
+  # Markdown linting is handled by the VS Code markdownlint extension and CI
+  # (it reads .markdownlint.yaml). Kept out of pre-commit to avoid Node.
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: helm-lint
+        name: helm lint + kubeconform (scripts/lint.sh)
+        entry: ./scripts/lint.sh
+        language: system
+        files: ^(charts|gitops|bootstrap)/
+        pass_filenames: false

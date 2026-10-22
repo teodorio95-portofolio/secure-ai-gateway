@@ -1,0 +1,52 @@
+name: Mirror to GitLab
+
+# Pushes every branch and tag to the matching GitLab project on each
+# GitHub push (and on branch/tag deletion), keeping GitLab in sync with
+# changes made on GitHub - including edits made from a phone.
+#
+# Requirements:
+#   - Secret GITLAB_TOKEN: a GitLab personal access token with the
+#     `write_repository` scope.
+#   - The GitLab project lives at:
+#       https://gitlab.com/teodorio95/<this-repo-name>.git
+#     GitLab "push to create" makes the project automatically on first
+#     push if it does not exist yet.
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - '**'
+  delete:
+
+concurrency:
+  group: mirror-to-gitlab-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mirror repository to GitLab
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GITLAB_TOKEN}" ]; then
+            echo "::error::GITLAB_TOKEN secret is not set. Add it in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+          # Bare mirror clone of the GitHub repo (all branches and tags).
+          git clone --mirror \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git" repo.git
+          cd repo.git
+
+          # Push everything to GitLab, pruning refs deleted on GitHub.
+          git push --mirror \
+            "https://oauth2:${GITLAB_TOKEN}@gitlab.com/teodorio95/${REPO_NAME}.git"

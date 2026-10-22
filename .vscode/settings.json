@@ -1,0 +1,6 @@
+{
+  "editor.formatOnSave": true,
+  "[yaml]": { "editor.defaultFormatter": "redhat.vscode-yaml" },
+  "[markdown]": { "editor.defaultFormatter": "DavidAnson.vscode-markdownlint" },
+  "files.associations": { "charts/*/templates/*.yaml": "helm" }
+}

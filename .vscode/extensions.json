@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "SonarSource.sonarlint-vscode",
+    "usernamehw.errorlens",
+    "streetsidesoftware.code-spell-checker",
+    "redhat.vscode-yaml",
+    "DavidAnson.vscode-markdownlint",
+    "ms-kubernetes-tools.vscode-kubernetes-tools",
+    "Tim-Koehler.helm-intellisense",
+    "GitLab.gitlab-workflow"
+  ]
+}

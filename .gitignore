@@ -1,0 +1,6 @@
+*.kubeconfig
+kubeconfig*
+.DS_Store
+*.tmp
+# Sealing private keys live in ~/.config/secure-ai-gateway, never in the repo.
+*.key

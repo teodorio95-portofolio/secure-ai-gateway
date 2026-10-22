@@ -1,0 +1,5 @@
+# Relaxed rules so well-formed docs don't trip on style noise.
+default: true
+MD013: false  # line length
+MD033: false  # inline HTML (e.g. mermaid <br/>)
+MD041: false  # first line in file should be a top-level heading
