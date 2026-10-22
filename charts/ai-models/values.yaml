@@ -1,0 +1,14 @@
+namespace:
+  # -- Create the namespace as part of the chart (carries the PSA labels).
+  create: true
+  name: ai-models
+  podSecurity:
+    # -- Pod Security Standard enforced on the namespace.
+    enforce: restricted
+    # -- PSS level only warned about (not enforced).
+    warn: restricted
+
+networkPolicy:
+  # -- Ship a default-deny (ingress + egress) policy with the chart. Explicit
+  # allows are added on top as CiliumNetworkPolicies.
+  enabled: true

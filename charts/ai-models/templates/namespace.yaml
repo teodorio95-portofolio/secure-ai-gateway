@@ -1,0 +1,10 @@
+{{- if .Values.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ai-models.labels" . | nindent 4 }}
+    pod-security.kubernetes.io/enforce: {{ .Values.namespace.podSecurity.enforce }}
+    pod-security.kubernetes.io/warn: {{ .Values.namespace.podSecurity.warn }}
+{{- end }}

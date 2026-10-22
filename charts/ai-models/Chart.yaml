@@ -1,0 +1,14 @@
+apiVersion: v2
+name: ai-models
+description: |
+  Local model zone: Ollama serving a model baked into its image — no egress beyond DNS.
+  Ships its own namespace (Pod Security labels) and default-deny NetworkPolicy,
+  so the cage exists even before Kyverno's generated one does.
+type: application
+version: 0.1.0
+keywords:
+  - llmops
+  - ai-platform
+  - network-policy
+maintainers:
+  - name: teodorio95

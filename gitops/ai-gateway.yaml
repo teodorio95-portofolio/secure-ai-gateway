@@ -1,0 +1,28 @@
+# LiteLLM gateway zone (ai-gateway ns).
+# Our own chart: the namespace (PSA labels) + its network cage ship together.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-gateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.com/teodorio95/secure-ai-gateway.git
+    targetRevision: HEAD
+    path: charts/ai-gateway
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    # The chart templates the namespace itself (with the PSA labels).
+    namespace: ai-gateway
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

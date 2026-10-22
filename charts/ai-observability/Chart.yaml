@@ -1,0 +1,14 @@
+apiVersion: v2
+name: ai-observability
+description: |
+  Tracing zone: network cage for Arize Phoenix (the Phoenix chart itself is upstream).
+  Ships its own namespace (Pod Security labels) and default-deny NetworkPolicy,
+  so the cage exists even before Kyverno's generated one does.
+type: application
+version: 0.1.0
+keywords:
+  - llmops
+  - ai-platform
+  - network-policy
+maintainers:
+  - name: teodorio95

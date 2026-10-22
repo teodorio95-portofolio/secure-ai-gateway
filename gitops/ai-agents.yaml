@@ -1,0 +1,28 @@
+# Agent zone (ai-agents ns): demo agent + MCP server.
+# Our own chart: the namespace (PSA labels) + its network cage ship together.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agents
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://gitlab.com/teodorio95/secure-ai-gateway.git
+    targetRevision: HEAD
+    path: charts/ai-agents
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    # The chart templates the namespace itself (with the PSA labels).
+    namespace: ai-agents
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

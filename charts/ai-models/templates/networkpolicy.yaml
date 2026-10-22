@@ -1,0 +1,18 @@
+{{- if .Values.networkPolicy.enabled }}
+# Default-deny posture: nothing in/out of the namespace unless explicitly
+# allowed. Kyverno also generates one in new namespaces, but only if its policy
+# was already in place when the namespace was created (generateExisting: false),
+# so the chart carries its own instead of relying on sync ordering.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-models-default-deny-all
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ai-models.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+{{- end }}
