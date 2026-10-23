@@ -1,8 +1,13 @@
 LAB_DIR       ?= ../secure-k8s-lab
 AI_NAMESPACES := ai-gateway ai-models ai-observability ai-agents
-AI_APPS       := secure-ai-gateway $(AI_NAMESPACES)
+AI_APPS       := secure-ai-gateway sealed-secrets $(AI_NAMESPACES) ai-secrets
+# The BYO sealing key pair lives outside the repo; only the cert is committed.
+SEALING_DIR    ?= $(HOME)/.config/secure-ai-gateway
+SEALING_SECRET := secure-ai-gateway-sealing-key
+SEALING_CERT   := secrets/sealing-cert.pem
 
-.PHONY: help wire-lab apps-status verify-namespaces lint secrets-scan
+.PHONY: help wire-lab apps-status verify-namespaces sealing-key sealing-key-install \
+	seal-secrets verify-secrets lint secrets-scan
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -23,6 +28,45 @@ verify-namespaces: ## Prove every AI namespace exists, enforces PSA and is defau
 		deny=$$(kubectl -n $$ns get networkpolicy -o name 2>/dev/null | grep default-deny | tr '\n' ' '); \
 		printf "%-18s PSA enforce=%-11s default-deny: %s\n" $$ns "$${psa:-MISSING}" "$${deny:-NONE}"; \
 	done
+
+sealing-key: ## Generate the BYO sealing key once (private key stays in ~/.config/secure-ai-gateway)
+	@if [ -f $(SEALING_DIR)/sealing.key ]; then \
+		echo "==> Keeping the existing key in $(SEALING_DIR)"; \
+	else \
+		mkdir -p $(SEALING_DIR) && chmod 700 $(SEALING_DIR) && \
+		openssl req -x509 -noenc -newkey rsa:4096 -days 3650 \
+			-subj "/CN=sealed-secret/O=secure-ai-gateway" \
+			-keyout $(SEALING_DIR)/sealing.key -out $(SEALING_DIR)/sealing.crt 2>/dev/null && \
+		chmod 600 $(SEALING_DIR)/sealing.key && \
+		echo "==> New key pair in $(SEALING_DIR)"; \
+	fi
+	@mkdir -p $(dir $(SEALING_CERT)) && cp $(SEALING_DIR)/sealing.crt $(SEALING_CERT)
+	@echo "==> Public cert copied to $(SEALING_CERT) (commit it; never the .key)"
+
+sealing-key-install: ## Load the BYO key into the cluster (bootstrap step, right after `make up`)
+	@kubectl -n kube-system create secret tls $(SEALING_SECRET) \
+		--cert=$(SEALING_DIR)/sealing.crt --key=$(SEALING_DIR)/sealing.key \
+		--dry-run=client -o yaml \
+		| kubectl label --local -f - sealedsecrets.bitnami.com/sealed-secrets-key=active -o yaml \
+		| kubectl apply --server-side --field-manager=secure-ai-gateway -f -
+	@# The controller only loads keys at start-up.
+	@if kubectl -n kube-system get deploy sealed-secrets-controller >/dev/null 2>&1; then \
+		kubectl -n kube-system rollout restart deploy/sealed-secrets-controller && \
+		kubectl -n kube-system rollout status deploy/sealed-secrets-controller --timeout=120s; \
+	else \
+		echo "==> Controller not deployed yet; it will pick the key up when ArgoCD starts it"; \
+	fi
+
+seal-secrets: ## Generate + seal the stack's secrets into secrets/sealed/ (values never printed)
+	./scripts/seal-secrets.sh
+
+verify-secrets: ## Prove every SealedSecret was decrypted into a Secret (names only, no values)
+	@kubectl get sealedsecrets -A --no-headers \
+		-o custom-columns=NS:.metadata.namespace,NAME:.metadata.name 2>/dev/null \
+		| while read -r ns name; do \
+			if kubectl -n $$ns get secret $$name >/dev/null 2>&1; then r=UNSEALED; else r=MISSING; fi; \
+			printf "%-18s %-22s %s\n" $$ns $$name $$r; \
+		done
 
 lint: ## helm lint + kubeconform every chart and Application (same as CI)
 	./scripts/lint.sh
