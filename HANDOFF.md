@@ -229,7 +229,7 @@ Re-check before pinning if time has passed.
 
 ### Phase 8 (optional — ask first)
 
-intentionally weak agent behind a values toggle (off by default),
+An intentionally weak agent behind a values toggle (off by default),
 same isolation as Juice Shop, target for projects #4/#5.
 
 ## 8. Constraints (from the user's original brief)
