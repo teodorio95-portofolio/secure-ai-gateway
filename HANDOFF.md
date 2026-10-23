@@ -80,12 +80,20 @@ Design choices made in Phase 0 (stated to the user, no objection):
   Note: on Colima + k3d Falco loads rules but **captures nothing** (documented in #5); existing
   rule "Suspicious tool executed in container" already covers a shell in `ai-agents`.
 
-## 5. Current state (end of Phase 2)
+## 5. Current state (end of Phase 7 — the planned build is complete)
 
-Commits on `main` (oldest → newest): `4b353f0` initial (user), `ec82faf` skeleton/lint/CI,
-`56d0402` four zones + gitops wiring, `42bff15` docs, `89041d8` GitHub-only + drop mirror,
-`794dcec` phase 2 (PR #1, squash). CI green. From phase 2 on, the user's branch → PR → squash
-merge workflow applies (they self-merge); push only with the user's OK.
+Phases 0–7 are merged on `main`: phase 2 in PR #1, phase 3 in PR #3, phases 4–7 in PR #4.
+Only **Phase 8** (an intentionally weak agent, off by default) remains — ask the user first.
+From phase 2 on, the user's branch → PR → squash merge workflow applies (they self-merge).
+
+Verified on the k3d lab (2026-10-23) before merging phases 4–7: `make gateway-test` 5/5,
+`make agent-ask` answers through MCP, `make verify-ai-netpol` 7/7, `make kyverno-test` 10/10,
+Phoenix spans carry team/key/model/tokens/cost, `/metrics/` exposes `litellm_*`, every new pod
+4 pass / 0 fail in Kyverno. Live-testing a branch: pause `root` + `secure-ai-gateway`
+auto-sync, retarget the child Applications' git sources to the branch, and afterwards
+`kubectl apply -f secure-k8s-lab/bootstrap/argocd/root-app.yaml` to put everything back on HEAD.
+
+The section below is the original phase-1 inventory, kept for history.
 
 What exists:
 
