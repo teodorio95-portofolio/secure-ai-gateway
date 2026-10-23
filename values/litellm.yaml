@@ -89,14 +89,15 @@ resources:
     memory: 2Gi
 
 migrationJob:
-  # -- Runs as an ArgoCD PreSync hook (chart default).
+  # -- Runs as an ArgoCD PreSync hook (chart default). It gets OOMKilled at
+  # 1Gi right after `prisma migrate deploy` finishes, so 2Gi.
   resources:
     requests:
       cpu: 100m
       memory: 256Mi
     limits:
       cpu: 500m
-      memory: 1Gi
+      memory: 2Gi
 
 proxy_config:
   model_list:
