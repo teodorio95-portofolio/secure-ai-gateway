@@ -26,16 +26,18 @@ cleanup() {
 trap cleanup EXIT
 for _ in $(seq 1 30); do curl -s -o /dev/null "$URL/health/liveliness" && break; sleep 1; done
 
-# chat <key> <model>: prints "<http status> <served model> <attempted fallbacks>"
+# chat <key> <model>: prints "<http status> <served model or error type> <attempted fallbacks>"
 chat() {
-  local auth=()
-  [[ -n "$1" ]] && auth=(-H "Authorization: Bearer $1")
+  # A header that is harmless when there is no key (bash 3.2 + set -u dislikes
+  # empty arrays).
+  local auth="X-No-Key: 1"
+  [[ -n "$1" ]] && auth="Authorization: Bearer $1"
   curl -s -o /tmp/gw-body.$$ -D /tmp/gw-head.$$ -w '%{http_code}' "$URL/v1/chat/completions" \
-    "${auth[@]}" -H 'Content-Type: application/json' \
+    -H "$auth" -H 'Content-Type: application/json' \
     -d "{\"model\": \"$2\", \"max_tokens\": 16, \"messages\": [{\"role\": \"user\", \"content\": \"Say pong.\"}]}" \
     >/tmp/gw-code.$$
   local served fb
-  served=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("model","-"))' /tmp/gw-body.$$ 2>/dev/null || echo -)
+  served=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("model") or (d.get("error") or {}).get("type") or "-")' /tmp/gw-body.$$ 2>/dev/null || echo -)
   fb=$(grep -i '^x-litellm-attempted-fallbacks:' /tmp/gw-head.$$ | tr -d '\r' | awk '{print $2}')
   echo "$(cat /tmp/gw-code.$$) ${served} ${fb:-0}"
   rm -f /tmp/gw-body.$$ /tmp/gw-head.$$ /tmp/gw-code.$$
@@ -80,6 +82,7 @@ for _ in $(seq 1 10); do # spend is written asynchronously
   r2=$(chat "$TINY" local)
   [[ ${r2%% *} != 200 ]] && break
 done
-[[ ${r1%% *} == 200 && ${r2%% *} =~ ^(400|429)$ ]]; check "tiny budget -> first ok, then budget exceeded" $? "($r1 | $r2)"
+# LiteLLM answers HTTP 422 with error.type "budget_exceeded".
+[[ ${r1%% *} == 200 && $r2 == *budget_exceeded* ]]; check "tiny budget -> first ok, then budget exceeded" $? "($r1 | $r2)"
 
 exit "$FAILED"
