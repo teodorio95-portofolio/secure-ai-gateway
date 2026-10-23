@@ -80,7 +80,7 @@ Design choices made in Phase 0 (stated to the user, no objection):
   Note: on Colima + k3d Falco loads rules but **captures nothing** (documented in #5); existing
   rule "Suspicious tool executed in container" already covers a shell in `ai-agents`.
 
-## 5. Current state (end of Phase 1)
+## 5. Current state (end of Phase 2)
 
 Commits on `main` (oldest → newest): `4b353f0` initial (user), `ec82faf` skeleton/lint/CI,
 `56d0402` four zones + gitops wiring, `42bff15` docs, `89041d8` GitHub-only + drop mirror.
@@ -108,16 +108,29 @@ What exists:
 - `README.md` skeleton (story, phase status table, mermaid, wiring, layout) and
   `docs/architecture.md` (zones table, Phase 0 decisions, pinned versions).
 
-**Not yet verified on a real cluster** (previous session had no Docker/k3d). First thing to do:
-ask the user for (or run, if you have the cluster) after `make wire-lab` + push in secure-k8s-lab:
+**Phase 1 verified on the real cluster (2026-10-23)**: the Application was applied with
+`kubectl apply -f bootstrap/secure-k8s-lab/secure-ai-gateway.yaml` (the lab repo itself is
+not wired yet); all 5 apps Synced/Healthy, every `ai-*` ns PSA restricted + both default-deny
+policies (ours and Kyverno 05's), no non-pass policy results.
 
-```bash
-make apps-status        # secure-ai-gateway + 4 children Synced/Healthy
-make verify-namespaces  # each ai-*: PSA enforce=restricted, both default-deny policies
-make kyverno-reports    # (in secure-k8s-lab) nothing new flagged
-```
+**Phase 2 (Sealed Secrets) built and verified** on branch `feat/sealed-secrets`: controller
+rendered from the upstream chart with `values/sealed-secrets.yaml`, BYO key installed, all 5
+SealedSecrets UNSEALED, controller pod 4 pass / 0 fail in Kyverno. The key pair is in
+`~/.config/secure-ai-gateway/` on the user's Mac. See `secrets/README.md`.
 
-Only after the user OKs Phase 1, start Phase 2.
+Environment traps found on the user's Mac:
+
+- **In-cluster DNS**: the Mac's network blocks public DNS (8.8.8.8 / 1.1.1.1 time out; the
+  Mac uses a local resolver). k3s CoreDNS falls back to 8.8.8.8 because the node's resolv.conf
+  is Docker's 127.0.0.11 → ArgoCD can't resolve gitlab.com. Runtime fix applied: CoreDNS
+  `forward . 192.168.5.1` (Colima's resolver). k3s re-applies its CoreDNS manifest on server
+  restart, so after every Colima/k3d restart re-patch, or fix it durably in secure-k8s-lab's
+  k3d config (give the user the patch; don't edit that repo).
+- `OPENAI_API_KEY` is exported in the user's shell — that's why provider sealing is opt-in.
+- A local PreToolUse hook blocks Claude's shell egress to non-allowlisted hosts (e.g.
+  Helm chart repos, likely `ghcr.io`): read chart sources through `gh api` instead.
+- The Sealed Secrets Helm repo moved with the GitHub org rename (bitnami-labs → bitnami): the
+  old `*.github.io` URL under bitnami-labs returns 404; use `https://bitnami.github.io/sealed-secrets`.
 
 ## 6. Pinned versions (verified 2026-10-22 from git tags / ghcr / Docker Hub / PyPI)
 
@@ -129,7 +142,7 @@ Only after the user OKs Phase 1, start Phase 2.
 | Phoenix chart | `oci://registry-1.docker.io/arizephoenix/phoenix-helm` **12.0.24** |
 | Phoenix image | `arizephoenix/phoenix:version-20.24.0-nonroot` |
 | Ollama | `ollama/ollama:0.40.8` (amd64+arm64) |
-| Sealed Secrets | chart **2.20.0** (repo `https://bitnami-labs.github.io/sealed-secrets`), controller `docker.io/bitnami/sealed-secrets-controller:0.40.0` |
+| Sealed Secrets | chart **2.20.0** (repo `https://bitnami.github.io/sealed-secrets`), controller `docker.io/bitnami/sealed-secrets-controller:0.40.0` |
 | Kyverno CLI | v1.18.1 (match the cluster) |
 | Python base | `python:3.13.17-slim-trixie` |
 | Utility images | `curlimages/curl:8.23.0`, `busybox:1.38.0` |

@@ -19,7 +19,7 @@ Built phase by phase; each phase is reviewed before the next one starts.
 |-------|-------|-------|
 | 0 | Exploration, versions, plan | ✅ |
 | 1 | Repo skeleton + GitOps wiring (namespaces + their cages) | ✅ |
-| 2 | Secrets (Sealed Secrets, BYO sealing key) | ⏳ |
+| 2 | Secrets (Sealed Secrets, BYO sealing key) | ✅ |
 | 3 | LiteLLM gateway + Postgres + bootstrap Job | ⏳ |
 | 4 | Tracing (Arize Phoenix) + Prometheus metrics | ⏳ |
 | 5 | Demo agent + MCP server | ⏳ |
@@ -67,6 +67,23 @@ make apps-status         # sync/health of the AI Applications
 make verify-namespaces   # every ai-* namespace: PSA restricted + default-deny
 ```
 
+## Secrets
+
+Secrets are [Sealed Secrets](https://github.com/bitnami/sealed-secrets)
+sealed with a **bring-your-own key**: the private key lives in
+`~/.config/secure-ai-gateway/`, the public cert and the ciphertext live in git,
+and every fresh cluster gets the same key — so what's committed always decrypts.
+The lab runs with **no paid API keys**; they are an opt-in extra.
+
+```bash
+make sealing-key           # once: key pair + secrets/sealing-cert.pem
+make seal-secrets          # generate + seal; prints file names, never values
+make sealing-key-install   # per cluster, right after `make up` in secure-k8s-lab
+make verify-secrets        # every SealedSecret → UNSEALED / MISSING
+```
+
+Details, the secret inventory and rotation: [secrets/README.md](secrets/README.md).
+
 ## Repository layout
 
 ```text
@@ -75,21 +92,23 @@ secure-ai-gateway/
 ├── bootstrap/
 │   └── secure-k8s-lab/
 │       └── secure-ai-gateway.yaml  # the one Application added to secure-k8s-lab
-├── gitops/                      # child ArgoCD Applications (one per zone)
-│   ├── ai-gateway.yaml
+├── gitops/                      # child ArgoCD Applications
+│   ├── sealed-secrets.yaml      # controller in kube-system (wave -1)
+│   ├── ai-gateway.yaml          # one per zone (wave 0)
 │   ├── ai-models.yaml
 │   ├── ai-observability.yaml
-│   └── ai-agents.yaml
+│   ├── ai-agents.yaml
+│   └── ai-secrets.yaml          # syncs secrets/sealed/
 ├── charts/                      # our own minimal charts: each zone carries its cage
 │   ├── ai-gateway/
 │   ├── ai-models/
 │   ├── ai-observability/
 │   └── ai-agents/
-├── values/                      # values for upstream charts (LiteLLM, Phoenix)
+├── values/                      # our values for upstream charts (Sealed Secrets, LiteLLM, Phoenix)
 ├── images/                      # Dockerfiles for the MCP server, agent, Ollama+model
-├── secrets/                     # SealedSecrets (ciphertext only)
+├── secrets/                     # public sealing cert + SealedSecrets (ciphertext only)
 ├── policies/kyverno/            # AI-specific guardrails (Audit) + kyverno tests
-├── scripts/                     # lint.sh (same gate locally and in CI)
+├── scripts/                     # lint.sh (same gate locally and in CI), seal-secrets.sh
 ├── .github/workflows/           # CI
 └── docs/
     └── architecture.md          # design decisions and trade-offs
