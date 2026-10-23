@@ -83,8 +83,9 @@ Design choices made in Phase 0 (stated to the user, no objection):
 ## 5. Current state (end of Phase 2)
 
 Commits on `main` (oldest → newest): `4b353f0` initial (user), `ec82faf` skeleton/lint/CI,
-`56d0402` four zones + gitops wiring, `42bff15` docs, `89041d8` GitHub-only + drop mirror.
-CI run #1 green; run #2 (on `89041d8`) was queued at handoff — check it.
+`56d0402` four zones + gitops wiring, `42bff15` docs, `89041d8` GitHub-only + drop mirror,
+`794dcec` phase 2 (PR #1, squash). CI green. From phase 2 on, the user's branch → PR → squash
+merge workflow applies (they self-merge); push only with the user's OK.
 
 What exists:
 
@@ -108,24 +109,26 @@ What exists:
 - `README.md` skeleton (story, phase status table, mermaid, wiring, layout) and
   `docs/architecture.md` (zones table, Phase 0 decisions, pinned versions).
 
-**Phase 1 verified on the real cluster (2026-10-23)**: the Application was applied with
-`kubectl apply -f bootstrap/secure-k8s-lab/secure-ai-gateway.yaml` (the lab repo itself is
-not wired yet); all 5 apps Synced/Healthy, every `ai-*` ns PSA restricted + both default-deny
-policies (ours and Kyverno 05's), no non-pass policy results.
+**Phase 1 verified on the real cluster (2026-10-23)**: all AI apps Synced/Healthy, every
+`ai-*` ns PSA restricted + both default-deny policies (ours and Kyverno 05's), no non-pass
+policy results. **The lab is wired through git**: secure-k8s-lab PR #2 (`1c37cae`) added
+`apps/argocd-apps/secure-ai-gateway.yaml`; the lab mirrors GitHub → GitLab automatically, and
+the root app tracks it.
 
-**Phase 2 (Sealed Secrets) built and verified** on branch `feat/sealed-secrets`: controller
-rendered from the upstream chart with `values/sealed-secrets.yaml`, BYO key installed, all 5
-SealedSecrets UNSEALED, controller pod 4 pass / 0 fail in Kyverno. The key pair is in
-`~/.config/secure-ai-gateway/` on the user's Mac. See `secrets/README.md`.
+**Phase 2 (Sealed Secrets) merged and running from `main`**: `sealed-secrets` and `ai-secrets`
+Synced/Healthy, BYO key installed, all 5 SealedSecrets UNSEALED, controller pod 4 pass / 0 fail
+in Kyverno. The key pair is in `~/.config/secure-ai-gateway/` on the user's Mac. See
+`secrets/README.md`. Next: Phase 3 (LiteLLM).
 
 Environment traps found on the user's Mac:
 
 - **In-cluster DNS**: the Mac's network blocks public DNS (8.8.8.8 / 1.1.1.1 time out; the
   Mac uses a local resolver). k3s CoreDNS falls back to 8.8.8.8 because the node's resolv.conf
-  is Docker's 127.0.0.11 → ArgoCD can't resolve gitlab.com. Runtime fix applied: CoreDNS
-  `forward . 192.168.5.1` (Colima's resolver). k3s re-applies its CoreDNS manifest on server
-  restart, so after every Colima/k3d restart re-patch, or fix it durably in secure-k8s-lab's
-  k3d config (give the user the patch; don't edit that repo).
+  is Docker's 127.0.0.11 → ArgoCD can't resolve gitlab.com. **Durable fix merged in
+  secure-k8s-lab** (PR #2): `make up` passes k3s `--resolv-conf` with the Docker-visible
+  resolver (192.168.5.1 on Colima). The *current* cluster predates it, so until the next
+  `make down && make up` CoreDNS is patched at runtime (`forward . 192.168.5.1`) and k3s
+  reverts that on every Colima/k3d restart — re-patch after a restart.
 - `OPENAI_API_KEY` is exported in the user's shell — that's why provider sealing is opt-in.
 - A local PreToolUse hook blocks Claude's shell egress to non-allowlisted hosts (e.g.
   Helm chart repos, likely `ghcr.io`): read chart sources through `gh api` instead.
