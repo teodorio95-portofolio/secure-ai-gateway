@@ -12,7 +12,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://gitlab.com/teodorio95/secure-ai-gateway.git
+    repoURL: https://github.com/teodorio95-portofolio/secure-ai-gateway.git
     targetRevision: HEAD
     path: charts/ai-gateway
     helm:

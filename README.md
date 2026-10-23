@@ -90,7 +90,7 @@ secure-ai-gateway/
 ├── secrets/                     # SealedSecrets (ciphertext only)
 ├── policies/kyverno/            # AI-specific guardrails (Audit) + kyverno tests
 ├── scripts/                     # lint.sh (same gate locally and in CI)
-├── .github/workflows/           # CI + mirror to GitLab
+├── .github/workflows/           # CI
 └── docs/
     └── architecture.md          # design decisions and trade-offs
 ```
