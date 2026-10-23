@@ -1,17 +1,21 @@
 LAB_DIR       ?= ../secure-k8s-lab
 AI_NAMESPACES := ai-gateway ai-models ai-observability ai-agents
-AI_APPS       := secure-ai-gateway sealed-secrets $(AI_NAMESPACES) ai-secrets
+AI_APPS       := secure-ai-gateway sealed-secrets $(AI_NAMESPACES) ai-secrets litellm
 # The BYO sealing key pair lives outside the repo; only the cert is committed.
 SEALING_DIR    ?= $(HOME)/.config/secure-ai-gateway
 SEALING_SECRET := secure-ai-gateway-sealing-key
 SEALING_CERT   := secrets/sealing-cert.pem
+# Local images: built here, imported into k3d, never pushed to a registry.
+K3D_CLUSTER   ?= secure-lab
+OLLAMA_IMAGE  := localhost/secure-ai-gateway/ollama:0.40.8-qwen2.5-1.5b
 
 .PHONY: help wire-lab apps-status verify-namespaces sealing-key sealing-key-install \
-	seal-secrets verify-secrets lint secrets-scan
+	seal-secrets verify-secrets build-images gateway-ui gateway-test gateway-bootstrap \
+	lint secrets-scan
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 wire-lab: ## Copy the ArgoCD Application into secure-k8s-lab (then commit + push there)
 	cp bootstrap/secure-k8s-lab/secure-ai-gateway.yaml $(LAB_DIR)/apps/argocd-apps/
@@ -67,6 +71,24 @@ verify-secrets: ## Prove every SealedSecret was decrypted into a Secret (names o
 			if kubectl -n $$ns get secret $$name >/dev/null 2>&1; then r=UNSEALED; else r=MISSING; fi; \
 			printf "%-18s %-22s %s\n" $$ns $$name $$r; \
 		done
+
+build-images: ## Build the local images (Ollama + baked model) and import them into k3d
+	docker build -t $(OLLAMA_IMAGE) images/ollama-model
+	k3d image import -c $(K3D_CLUSTER) $(OLLAMA_IMAGE)
+
+gateway-ui: ## Port-forward LiteLLM (API + admin UI) to http://localhost:4000/ui
+	@echo "==> Admin login: user 'admin', password = the master key:"
+	@echo "    kubectl -n ai-gateway get secret litellm-masterkey -o jsonpath='{.data.masterkey}' | base64 -d"
+	kubectl -n ai-gateway port-forward svc/litellm 4000:4000
+
+gateway-test: ## End-to-end gateway checks (auth, team scope, fallback, budget) → PASS/FAIL
+	./scripts/gateway-test.sh
+
+gateway-bootstrap: ## Re-run the bootstrap Job (teams + agent key) without waiting for a sync
+	@kubectl -n ai-gateway delete job litellm-bootstrap --ignore-not-found
+	@kubectl -n argocd patch application litellm --type merge \
+		-p '{"operation":{"sync":{"syncStrategy":{"hook":{}}}}}'
+	@echo "==> Sync requested; follow with: kubectl -n ai-gateway logs -f job/litellm-bootstrap"
 
 lint: ## helm lint + kubeconform every chart and Application (same as CI)
 	./scripts/lint.sh

@@ -12,3 +12,22 @@ networkPolicy:
   # -- Ship a default-deny (ingress + egress) policy with the chart. Explicit
   # allows are added on top as CiliumNetworkPolicies.
   enabled: true
+
+ollama:
+  enabled: true
+  # -- Built locally by `make build-images` (model baked in) and loaded with
+  # `k3d image import`; never pulled from a registry.
+  image: localhost/secure-ai-gateway/ollama:0.40.8-qwen2.5-1.5b
+  # -- Model tag inside the image (LiteLLM's `local` alias points at it).
+  model: qwen2.5:1.5b
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 3Gi
+
+gateway:
+  # -- Namespace allowed to call Ollama (the LiteLLM pods in it).
+  namespace: ai-gateway

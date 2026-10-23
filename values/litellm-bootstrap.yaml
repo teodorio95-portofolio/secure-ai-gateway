@@ -1,0 +1,150 @@
+# Bootstrap for the gateway, rendered through the upstream chart's
+# extraResources: teams with budgets/limits, and the demo agent's virtual key.
+# Separate file from values/litellm.yaml only for readability; both are
+# valueFiles of gitops/litellm.yaml.
+#
+# Runs as an ArgoCD PostSync hook (after the proxy is healthy), on every sync.
+# Idempotent: it looks each team/key up before creating it. Keys are never
+# printed. To re-run by hand: `make gateway-bootstrap`.
+extraResources:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: litellm-bootstrap
+      labels:
+        app.kubernetes.io/name: litellm-bootstrap
+        app.kubernetes.io/part-of: secure-ai-gateway
+    data:
+      # -- Teams: per-team budget (USD over budget_duration), token and request
+      # rate limits, and the model aliases each team may use.
+      teams.json: |
+        [
+          {"team_alias": "team-payments", "max_budget": 5.0, "budget_duration": "30d",
+           "tpm_limit": 20000, "rpm_limit": 30, "models": ["default", "cheap", "local"]},
+          {"team_alias": "team-support", "max_budget": 1.0, "budget_duration": "30d",
+           "tpm_limit": 5000, "rpm_limit": 10, "models": ["cheap", "local"]}
+        ]
+      # -- The demo agent's key: which team it belongs to and what it may call.
+      agent.json: |
+        {"key_alias": "demo-agent", "team_alias": "team-support",
+         "models": ["cheap", "local"], "max_budget": 0.5, "rpm_limit": 10}
+      bootstrap.py: |
+        """Create the gateway's teams and register the agent's virtual key."""
+        import json, os, sys, time, urllib.error, urllib.parse, urllib.request
+
+        BASE = os.environ["LITELLM_URL"]
+        MASTER = os.environ["LITELLM_MASTER_KEY"]
+        AGENT_KEY = os.environ["AGENT_KEY"]
+        CONF = "/bootstrap"
+
+        def call(method, path, body=None, ok=(200,)):
+            req = urllib.request.Request(
+                BASE + path, method=method,
+                data=json.dumps(body).encode() if body is not None else None,
+                headers={"Authorization": f"Bearer {MASTER}", "Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    return r.status, json.loads(r.read() or b"null")
+            except urllib.error.HTTPError as e:
+                if e.code in ok:
+                    return e.code, None
+                raise SystemExit(f"{method} {path} -> HTTP {e.code}: {e.read()[:300]!r}")
+
+        # Wait for the proxy (PostSync already waits for health, this covers restarts).
+        for _ in range(60):
+            try:
+                if call("GET", "/health/readiness")[0] == 200:
+                    break
+            except (urllib.error.URLError, OSError):
+                pass
+            time.sleep(5)
+        else:
+            sys.exit("LiteLLM never became ready")
+
+        teams = {t["team_alias"]: t["team_id"] for t in call("GET", "/team/list")[1] or []}
+        for team in json.load(open(f"{CONF}/teams.json")):
+            alias = team["team_alias"]
+            if alias in teams:
+                call("POST", "/team/update", {"team_id": teams[alias], **team})
+                print(f"team {alias}: exists, limits updated")
+            else:
+                teams[alias] = call("POST", "/team/new", team)[1]["team_id"]
+                print(f"team {alias}: created")
+
+        agent = json.load(open(f"{CONF}/agent.json"))
+        team_id = teams[agent.pop("team_alias")]
+        q = urllib.parse.urlencode({"key": AGENT_KEY})
+        status, _ = call("GET", f"/key/info?{q}", ok=(200, 400, 404))
+        if status == 200:
+            call("POST", "/key/update", {"key": AGENT_KEY, "team_id": team_id, **agent})
+            print(f"key {agent['key_alias']}: exists, limits updated")
+        else:
+            call("POST", "/key/generate", {"key": AGENT_KEY, "team_id": team_id, **agent})
+            print(f"key {agent['key_alias']}: registered on its team")
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: litellm-bootstrap
+      labels:
+        app.kubernetes.io/name: litellm-bootstrap
+        app.kubernetes.io/part-of: secure-ai-gateway
+      annotations:
+        argocd.argoproj.io/hook: PostSync
+        # Keep the last run (and its logs) until the next sync replaces it.
+        argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: litellm-bootstrap
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: bootstrap
+              # The proxy's own image: Python is already there, no extra pull.
+              image: ghcr.io/berriai/litellm-non_root:v1.106.2@sha256:07fabea33dfc2b127e865c03112dfc76936334b29028ec05cdd355af2385dc04
+              imagePullPolicy: IfNotPresent
+              command: ["python", "/bootstrap/bootstrap.py"]
+              env:
+                - name: LITELLM_URL
+                  value: http://litellm:4000
+                - name: LITELLM_MASTER_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: litellm-masterkey
+                      key: masterkey
+                - name: AGENT_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: agent-virtual-key
+                      key: api-key
+              securityContext:
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+              volumeMounts:
+                - name: bootstrap
+                  mountPath: /bootstrap
+                  readOnly: true
+          volumes:
+            - name: bootstrap
+              configMap:
+                name: litellm-bootstrap

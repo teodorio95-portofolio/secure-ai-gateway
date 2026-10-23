@@ -1,0 +1,41 @@
+# LiteLLM proxy (multi-source: upstream OCI chart + our values).
+# Its Postgres, secrets and network cage come from earlier waves; the chart's
+# Prisma migrations Job runs as PreSync, our bootstrap Job as PostSync.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: litellm
+  namespace: argocd
+  annotations:
+    # After the zones, their cages and the SealedSecrets (wave 0).
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: ghcr.io/berriai
+      chart: litellm-helm
+      targetRevision: 1.106.2
+      helm:
+        releaseName: litellm
+        valueFiles:
+          - $sag/values/litellm.yaml
+          - $sag/values/litellm-bootstrap.yaml
+    - repoURL: https://github.com/teodorio95-portofolio/secure-ai-gateway.git
+      targetRevision: HEAD
+      ref: sag
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-gateway
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    # The migrations Job may start before Postgres (wave 0) is ready; retry.
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,98 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $ns := .Values.namespace.name }}
+{{- $llm := .Values.litellm }}
+# Explicit allows on top of the namespace's default-deny. They live in this
+# chart (sync wave 0), not in the LiteLLM app, because LiteLLM's Prisma
+# migrations Job runs as a PreSync hook and must already reach Postgres.
+#
+# LiteLLM: talks to Postgres, DNS, Ollama and the provider FQDN allowlist only.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: litellm
+  namespace: {{ $ns }}
+  labels:
+    {{- include "ai-gateway.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $llm.name }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: litellm-bootstrap
+      toPorts:
+        - ports:
+            - port: {{ $llm.port | quote }}
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: postgres
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.models.namespace }}
+            app.kubernetes.io/name: ollama
+      toPorts:
+        - ports:
+            - port: {{ .Values.models.port | quote }}
+              protocol: TCP
+    {{- include "ai-gateway.dnsEgress" . | nindent 4 }}
+    {{- with $llm.providerFQDNs }}
+    - toFQDNs:
+        {{- range . }}
+        - matchName: {{ . }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{- end }}
+---
+# Postgres: only LiteLLM (proxy + migrations Job) may connect.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: postgres
+  namespace: {{ $ns }}
+  labels:
+    {{- include "ai-gateway.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: {{ $llm.name }}
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+---
+# Bootstrap Job (teams + agent key): reaches the LiteLLM admin API only.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: litellm-bootstrap
+  namespace: {{ $ns }}
+  labels:
+    {{- include "ai-gateway.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: litellm-bootstrap
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: {{ $llm.name }}
+      toPorts:
+        - ports:
+            - port: {{ $llm.port | quote }}
+              protocol: TCP
+    {{- include "ai-gateway.dnsEgress" . | nindent 4 }}
+{{- end }}

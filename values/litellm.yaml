@@ -1,0 +1,133 @@
+# Our values for the upstream litellm-helm chart (gitops/litellm.yaml).
+# Postgres is ours (charts/ai-gateway), secrets come from SealedSecrets, the
+# network cage lives in charts/ai-gateway (it must exist before the chart's
+# PreSync migrations Job runs).
+
+image:
+  # -- The non-root build of the proxy (uid 65534), pinned by tag + digest.
+  repository: ghcr.io/berriai/litellm-non_root
+  tag: v1.106.2@sha256:07fabea33dfc2b127e865c03112dfc76936334b29028ec05cdd355af2385dc04
+  pullPolicy: IfNotPresent
+
+# -- One uvicorn worker: plenty for a lab, and memory scales per worker.
+numWorkers: 1
+
+# -- Admin key from the SealedSecret (never chart-generated).
+masterkeySecretName: litellm-masterkey
+masterkeySecretKey: masterkey
+
+db:
+  # -- Our Postgres StatefulSet (charts/ai-gateway), not the bitnamilegacy subchart.
+  useExisting: true
+  deployStandalone: false
+  endpoint: postgres
+  database: litellm
+  secret:
+    name: litellm-postgres
+    usernameKey: username
+    passwordKey: password
+
+# -- Paid provider keys are optional: with no llm-provider-keys Secret the env
+# vars are simply absent, the paid aliases error, and the router falls back to
+# the local model (the lab runs with zero paid keys).
+extraEnvVars:
+  # Use the cost map bundled in the image instead of fetching it from GitHub
+  # at start-up (egress is blocked anyway; this skips the timeouts).
+  - name: LITELLM_LOCAL_MODEL_COST_MAP
+    value: "True"
+  - name: ANTHROPIC_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: llm-provider-keys
+        key: ANTHROPIC_API_KEY
+        optional: true
+  - name: OPENAI_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: llm-provider-keys
+        key: OPENAI_API_KEY
+        optional: true
+
+podLabels:
+  ai.role: gateway
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  runAsGroup: 65534
+  fsGroup: 65534
+  seccompProfile:
+    type: RuntimeDefault
+
+# The chart mounts emptyDirs on /tmp, /.cache and /.npm when the root FS is
+# read-only — but only in the Deployment, not in the migrations Job, whose
+# Python then finds no writable temp dir. `volumes`/`volumeMounts` go into
+# both, so give them a writable /var/tmp (Python's next candidate after /tmp;
+# a second /tmp mount would clash with the chart's in the Deployment).
+volumes:
+  - name: var-tmp
+    emptyDir:
+      sizeLimit: 100Mi
+volumeMounts:
+  - name: var-tmp
+    mountPath: /var/tmp
+
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 768Mi
+  limits:
+    cpu: "1"
+    memory: 2Gi
+
+migrationJob:
+  # -- Runs as an ArgoCD PreSync hook (chart default). It gets OOMKilled at
+  # 1Gi right after `prisma migrate deploy` finishes, so 2Gi.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 2Gi
+
+proxy_config:
+  model_list:
+    # -- Best paid model. Needs ANTHROPIC_API_KEY; otherwise falls back.
+    - model_name: default
+      litellm_params:
+        model: anthropic/claude-sonnet-5-5
+        api_key: os.environ/ANTHROPIC_API_KEY
+    # -- Cheap paid model on a second provider (provider failover).
+    - model_name: cheap
+      litellm_params:
+        model: openai/gpt-6-luna
+        api_key: os.environ/OPENAI_API_KEY
+    # -- In-cluster model, always available. Priced at an internal chargeback
+    # rate so budgets and spend tracking work without any paid key.
+    - model_name: local
+      litellm_params:
+        model: ollama_chat/qwen2.5:1.5b
+        api_base: http://ollama.ai-models.svc.cluster.local:11434
+        input_cost_per_token: 0.000001
+        output_cost_per_token: 0.000002
+  router_settings:
+    # Paid → cheaper paid → local.
+    fallbacks:
+      - default: [cheap, local]
+      - cheap: [local]
+    num_retries: 1
+    # CPU inference on a laptop is slow; don't cut the local model off.
+    timeout: 120
+  litellm_settings:
+    drop_params: true
+  general_settings:
+    master_key: os.environ/PROXY_MASTER_KEY

@@ -1,0 +1,26 @@
+{{- if and .Values.networkPolicy.enabled .Values.ollama.enabled }}
+# Ollama may only be called by the LiteLLM pods in the gateway namespace, on
+# 11434. Deliberately no egress allow at all — not even DNS: the model is baked
+# into the image, so the model zone has no reason to talk to anything, and the
+# namespace's default-deny NetworkPolicy keeps egress closed.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ollama
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ai-models.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: ollama
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.gateway.namespace }}
+            app.kubernetes.io/name: litellm
+      toPorts:
+        - ports:
+            - port: "11434"
+              protocol: TCP
+{{- end }}
