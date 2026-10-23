@@ -1,0 +1,120 @@
+{{- $ns := .Values.namespace.name }}
+{{- define "ai-agents.podSecurity" -}}
+automountServiceAccountToken: false
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+{{- end }}
+{{- define "ai-agents.containerSecurity" -}}
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+{{- end }}
+{{- if .Values.mcpServer.enabled }}
+# MCP server with the support tools (tickets, runbooks).
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-server
+  namespace: {{ $ns }}
+  labels:
+    {{- include "ai-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/name: mcp-server
+spec:
+  selector:
+    app.kubernetes.io/name: mcp-server
+  ports:
+    - name: http
+      port: {{ .Values.mcpServer.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-server
+  namespace: {{ $ns }}
+  labels:
+    {{- include "ai-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/name: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-server
+  template:
+    metadata:
+      labels:
+        {{- include "ai-agents.labels" . | nindent 8 }}
+        app.kubernetes.io/name: mcp-server
+        ai.role: tool
+    spec:
+      {{- include "ai-agents.podSecurity" . | nindent 6 }}
+      containers:
+        - name: mcp-server
+          image: {{ .Values.mcpServer.image }}
+          imagePullPolicy: Never
+          env:
+            - name: PORT
+              value: {{ .Values.mcpServer.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.mcpServer.port }}
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          {{- include "ai-agents.containerSecurity" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.mcpServer.resources | nindent 12 }}
+{{- end }}
+{{- if .Values.agent.enabled }}
+---
+# The demo agent. It holds only its own virtual key — never a provider key —
+# and no ServiceAccount token: a prompt-injected agent has nothing to steal.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-agent
+  namespace: {{ $ns }}
+  labels:
+    {{- include "ai-agents.labels" . | nindent 4 }}
+    app.kubernetes.io/name: demo-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: demo-agent
+  template:
+    metadata:
+      labels:
+        {{- include "ai-agents.labels" . | nindent 8 }}
+        app.kubernetes.io/name: demo-agent
+        ai.role: agent
+    spec:
+      {{- include "ai-agents.podSecurity" . | nindent 6 }}
+      containers:
+        - name: agent
+          image: {{ .Values.agent.image }}
+          imagePullPolicy: Never
+          env:
+            - name: LITELLM_BASE_URL
+              value: http://{{ .Values.gateway.service }}.{{ .Values.gateway.namespace }}.svc.cluster.local:{{ .Values.gateway.port }}/v1
+            - name: MCP_URL
+              value: http://mcp-server.{{ $ns }}.svc.cluster.local:{{ .Values.mcpServer.port }}/mcp
+            - name: AGENT_MODEL
+              value: {{ .Values.agent.model }}
+            - name: AGENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.agent.keySecret }}
+                  key: api-key
+          {{- include "ai-agents.containerSecurity" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.agent.resources | nindent 12 }}
+{{- end }}

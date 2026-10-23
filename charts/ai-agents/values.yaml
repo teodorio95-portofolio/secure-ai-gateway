@@ -12,3 +12,38 @@ networkPolicy:
   # -- Ship a default-deny (ingress + egress) policy with the chart. Explicit
   # allows are added on top as CiliumNetworkPolicies.
   enabled: true
+
+mcpServer:
+  enabled: true
+  # -- Local image (`make build-images`), never pulled from a registry.
+  image: localhost/secure-ai-gateway/mcp-server:0.1.0
+  port: 8000
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+agent:
+  enabled: true
+  # -- Local image (`make build-images`), never pulled from a registry.
+  image: localhost/secure-ai-gateway/demo-agent:0.1.0
+  # -- Model alias the agent asks for (its key only allows `cheap` and `local`).
+  model: local
+  # -- Secret with the agent's virtual key (sealed for this namespace).
+  keySecret: agent-virtual-key
+  resources:
+    requests:
+      cpu: 20m
+      memory: 96Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+gateway:
+  # -- Where LiteLLM runs; the only model endpoint agents may reach.
+  namespace: ai-gateway
+  service: litellm
+  port: 4000
