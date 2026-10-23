@@ -31,6 +31,10 @@ db:
 # vars are simply absent, the paid aliases error, and the router falls back to
 # the local model (the lab runs with zero paid keys).
 extraEnvVars:
+  # Use the cost map bundled in the image instead of fetching it from GitHub
+  # at start-up (egress is blocked anyway; this skips the timeouts).
+  - name: LITELLM_LOCAL_MODEL_COST_MAP
+    value: "True"
   - name: ANTHROPIC_API_KEY
     valueFrom:
       secretKeyRef:
@@ -56,7 +60,18 @@ podSecurityContext:
     type: RuntimeDefault
 
 # The chart mounts emptyDirs on /tmp, /.cache and /.npm when the root FS is
-# read-only.
+# read-only — but only in the Deployment, not in the migrations Job, whose
+# Python then finds no writable temp dir. `volumes`/`volumeMounts` go into
+# both, so give them a writable /var/tmp (Python's next candidate after /tmp;
+# a second /tmp mount would clash with the chart's in the Deployment).
+volumes:
+  - name: var-tmp
+    emptyDir:
+      sizeLimit: 100Mi
+volumeMounts:
+  - name: var-tmp
+    mountPath: /var/tmp
+
 securityContext:
   runAsNonRoot: true
   allowPrivilegeEscalation: false
