@@ -30,5 +30,5 @@ repos:
         name: helm lint + kubeconform (scripts/lint.sh)
         entry: ./scripts/lint.sh
         language: system
-        files: ^(charts|gitops|bootstrap)/
+        files: ^(charts|gitops|bootstrap|values|secrets)/
         pass_filenames: false

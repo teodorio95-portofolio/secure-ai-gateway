@@ -54,6 +54,29 @@ key pair is generated once and kept **outside the repo**
 SealedSecrets committed here stay decryptable across `make down && make up`.
 Forks re-seal with their own key.
 
+How it's wired (phase 2):
+
+- The controller runs in **`kube-system`** (`gitops/sealed-secrets.yaml`, wave
+  -1): `kubeseal` finds `sealed-secrets-controller` there without flags, and
+  Kyverno `05` doesn't drop a default-deny on it. The upstream chart is already
+  non-root / read-only / drop-ALL; our values add limits and the pod-level
+  `runAsNonRoot` that Kyverno `02` checks.
+- **Automatic key renewal is off** (`keyrenewperiod: "0"`). With renewal on, the
+  controller would mint a new key every 30 days; old keys would keep decrypting,
+  but the cluster would drift from the "one key, kept outside git" model.
+- Sealing is **offline** (`kubeseal --cert secrets/sealing-cert.pem`) with strict
+  scope: a ciphertext only opens under its own name and namespace.
+- The key is installed with `kubectl apply --server-side`, so the private key
+  isn't duplicated into a `last-applied-configuration` annotation.
+- `ai-secrets` is a plain directory Application over `secrets/sealed/` with
+  `SkipDryRunOnMissingResource` and retry/backoff: child-app waves order the
+  apply, not readiness, so the CRD or a namespace may arrive a few seconds later.
+- `seal-secrets.sh` is idempotent, because rotating the Postgres password blindly
+  would break the database already on the PVC. Values reach `kubectl` through a
+  process substitution (never argv, never a file) and are never printed. Paid
+  provider keys are opt-in (`WITH_PROVIDERS=1`), so a key that just happens to be
+  exported in the shell is never sealed by accident.
+
 ### Model delivery: baked into the image
 
 The model (`qwen2.5:1.5b`) is pulled at **image build time** on the host and baked
@@ -61,7 +84,7 @@ into a local Ollama image (`localhost/secure-ai-gateway/...`, imported into k3d)
 The `ai-models` namespace therefore never needs internet egress. The trade-off
 is disk: the image exists in Docker and again in the k3d node.
 
-## Pinned versions (verified 2026-10-22)
+## Pinned versions (verified 2026-10-22; Sealed Secrets re-checked 2026-10-23)
 
 | Component | Version |
 |-----------|---------|
