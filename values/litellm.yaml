@@ -35,6 +35,18 @@ extraEnvVars:
   # at start-up (egress is blocked anyway; this skips the timeouts).
   - name: LITELLM_LOCAL_MODEL_COST_MAP
     value: "True"
+  # Traces → Arize Phoenix (ai-observability), OTLP over HTTP.
+  - name: PHOENIX_COLLECTOR_HTTP_ENDPOINT
+    value: http://phoenix-svc.ai-observability.svc.cluster.local:6006/v1/traces
+  - name: PHOENIX_PROJECT_NAME
+    value: secure-ai-gateway
+  # Phoenix's admin secret doubles as its system bearer token (sealed twice).
+  - name: PHOENIX_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: phoenix-api-key
+        key: PHOENIX_API_KEY
+        optional: true
   - name: ANTHROPIC_API_KEY
     valueFrom:
       secretKeyRef:
@@ -129,5 +141,8 @@ proxy_config:
     timeout: 120
   litellm_settings:
     drop_params: true
+    # Every call is traced (team, key alias, model, tokens, cost, latency) and
+    # counted for Prometheus on the proxy's /metrics.
+    callbacks: ["arize_phoenix", "prometheus"]
   general_settings:
     master_key: os.environ/PROXY_MASTER_KEY

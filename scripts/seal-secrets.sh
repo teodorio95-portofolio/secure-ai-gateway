@@ -67,18 +67,24 @@ agent_key() {
 # Phoenix (auth on, chart's createSecret off: a chart-generated random secret
 # would change on every ArgoCD render). The chart maps every key below to an
 # env var; the Postgres/SMTP ones are unused here but must exist.
+# The admin secret is also Phoenix's system bearer token: sealed a second time
+# for ai-gateway as PHOENIX_API_KEY, so LiteLLM can send traces.
 phoenix() {
+  local admin
+  admin=$(rand_hex 32)
   seal ai-observability phoenix-secret \
     "PHOENIX_SECRET=$(rand_hex 32)" \
-    "PHOENIX_ADMIN_SECRET=$(rand_hex 32)" \
+    "PHOENIX_ADMIN_SECRET=$admin" \
+    "PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD=$(rand_hex 16)" \
     "PHOENIX_POSTGRES_PASSWORD=$(rand_hex 16)" \
     "PHOENIX_SMTP_PASSWORD=$(rand_hex 16)"
+  seal ai-gateway phoenix-api-key "PHOENIX_API_KEY=$admin"
 }
 
 write_once ai-gateway-litellm-masterkey.yaml masterkey
 write_once ai-gateway-litellm-postgres.yaml postgres
 write_once agent-virtual-key.yaml agent_key
-write_once ai-observability-phoenix-secret.yaml phoenix
+write_once phoenix-secret.yaml phoenix
 
 if [[ "${WITH_PROVIDERS:-0}" != "1" ]]; then
   echo "skipped llm-provider-keys (WITH_PROVIDERS=1 not set — local model only)"

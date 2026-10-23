@@ -1,5 +1,7 @@
-# Tracing zone (ai-observability ns): Phoenix's network cage.
-# Our own chart: the namespace (PSA labels) + its network cage ship together.
+# Tracing zone (ai-observability ns), multi-source:
+#   1. our chart — the namespace (PSA labels) + its network cage,
+#   2. the upstream Arize Phoenix chart with values/phoenix.yaml,
+#   3. this repo as a ref, for that values file.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -11,16 +13,26 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
-  source:
-    repoURL: https://github.com/teodorio95-portofolio/secure-ai-gateway.git
-    targetRevision: HEAD
-    path: charts/ai-observability
-    helm:
-      valueFiles:
-        - values.yaml
+  sources:
+    - repoURL: https://github.com/teodorio95-portofolio/secure-ai-gateway.git
+      targetRevision: HEAD
+      path: charts/ai-observability
+      helm:
+        valueFiles:
+          - values.yaml
+    - repoURL: registry-1.docker.io/arizephoenix
+      chart: phoenix-helm
+      targetRevision: 12.0.24
+      helm:
+        releaseName: phoenix
+        valueFiles:
+          - $sag/values/phoenix.yaml
+    - repoURL: https://github.com/teodorio95-portofolio/secure-ai-gateway.git
+      targetRevision: HEAD
+      ref: sag
   destination:
     server: https://kubernetes.default.svc
-    # The chart templates the namespace itself (with the PSA labels).
+    # Our chart templates the namespace itself (with the PSA labels).
     namespace: ai-observability
   syncPolicy:
     automated:

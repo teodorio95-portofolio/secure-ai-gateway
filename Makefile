@@ -10,7 +10,7 @@ K3D_CLUSTER   ?= secure-lab
 OLLAMA_IMAGE  := localhost/secure-ai-gateway/ollama:0.40.8-qwen2.5-1.5b
 
 .PHONY: help wire-lab apps-status verify-namespaces sealing-key sealing-key-install \
-	seal-secrets verify-secrets build-images gateway-ui gateway-test gateway-bootstrap \
+	seal-secrets verify-secrets build-images gateway-ui gateway-test gateway-bootstrap traces-ui \
 	lint secrets-scan
 
 help: ## Show this help
@@ -83,6 +83,11 @@ gateway-ui: ## Port-forward LiteLLM (API + admin UI) to http://localhost:4000/ui
 
 gateway-test: ## End-to-end gateway checks (auth, team scope, fallback, budget) → PASS/FAIL
 	./scripts/gateway-test.sh
+
+traces-ui: ## Port-forward Arize Phoenix (traces) to http://localhost:6006
+	@echo "==> Login: admin@localhost / password:"
+	@echo "    kubectl -n ai-observability get secret phoenix-secret -o jsonpath='{.data.PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD}' | base64 -d"
+	kubectl -n ai-observability port-forward svc/phoenix-svc 6006:6006
 
 gateway-bootstrap: ## Re-run the bootstrap Job (teams + agent key) without waiting for a sync
 	@kubectl -n ai-gateway delete job litellm-bootstrap --ignore-not-found

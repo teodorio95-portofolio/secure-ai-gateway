@@ -5,7 +5,8 @@
 # chart (sync wave 0), not in the LiteLLM app, because LiteLLM's Prisma
 # migrations Job runs as a PreSync hook and must already reach Postgres.
 #
-# LiteLLM: talks to Postgres, DNS, Ollama and the provider FQDN allowlist only.
+# LiteLLM: called by the bootstrap Job and by ai.role=agent pods in ai-agents;
+# talks to Postgres, Ollama, Phoenix, DNS and the provider FQDN allowlist only.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -21,6 +22,9 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: litellm-bootstrap
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.agents.namespace }}
+            ai.role: {{ .Values.agents.roleLabel }}
       toPorts:
         - ports:
             - port: {{ $llm.port | quote }}
@@ -40,6 +44,14 @@ spec:
       toPorts:
         - ports:
             - port: {{ .Values.models.port | quote }}
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.observability.namespace }}
+            app: {{ .Values.observability.podLabel }}
+      toPorts:
+        - ports:
+            - port: {{ .Values.observability.port | quote }}
               protocol: TCP
     {{- include "ai-gateway.dnsEgress" . | nindent 4 }}
     {{- with $llm.providerFQDNs }}

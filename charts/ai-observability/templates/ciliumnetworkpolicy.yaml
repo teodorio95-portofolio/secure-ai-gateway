@@ -1,0 +1,26 @@
+{{- if .Values.networkPolicy.enabled }}
+# Phoenix accepts traces (OTLP/HTTP on 6006) from the LiteLLM pods only. No
+# egress allow at all: telemetry and external UI resources are off in
+# values/phoenix.yaml, and the namespace default-deny keeps egress closed.
+# The UI is reached through `kubectl port-forward` (`make traces-ui`).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: phoenix
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ai-observability.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app: {{ .Values.phoenix.podLabel }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.gateway.namespace }}
+            app.kubernetes.io/name: litellm
+      toPorts:
+        - ports:
+            - port: {{ .Values.phoenix.port | quote }}
+              protocol: TCP
+{{- end }}
