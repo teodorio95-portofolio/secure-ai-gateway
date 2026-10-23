@@ -12,3 +12,13 @@ networkPolicy:
   # -- Ship a default-deny (ingress + egress) policy with the chart. Explicit
   # allows are added on top as CiliumNetworkPolicies.
   enabled: true
+
+phoenix:
+  # -- Pod label of the Phoenix pods (upstream chart: `app: phoenix`).
+  podLabel: phoenix
+  # -- HTTP port: UI, API and OTLP/HTTP trace ingest.
+  port: 6006
+
+gateway:
+  # -- Namespace whose LiteLLM pods may send traces.
+  namespace: ai-gateway

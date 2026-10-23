@@ -1,0 +1,65 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $ns := .Values.namespace.name }}
+# The agent's whole world: the LiteLLM port and the MCP server, plus DNS
+# through Cilium's DNS proxy. No internet, no other namespace, no API server
+# (and no ServiceAccount token to use against it anyway).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: demo-agent
+  namespace: {{ $ns }}
+  labels:
+    {{- include "ai-agents.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      ai.role: agent
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.gateway.namespace }}
+            app.kubernetes.io/name: litellm
+      toPorts:
+        - ports:
+            - port: {{ .Values.gateway.port | quote }}
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: mcp-server
+      toPorts:
+        - ports:
+            - port: {{ .Values.mcpServer.port | quote }}
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+---
+# The MCP server answers agents only and talks to nothing.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: mcp-server
+  namespace: {{ $ns }}
+  labels:
+    {{- include "ai-agents.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-server
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            ai.role: agent
+      toPorts:
+        - ports:
+            - port: {{ .Values.mcpServer.port | quote }}
+              protocol: TCP
+{{- end }}

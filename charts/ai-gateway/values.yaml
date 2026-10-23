@@ -30,6 +30,18 @@ models:
   namespace: ai-models
   port: 11434
 
+observability:
+  # -- Where Phoenix runs and its OTLP/HTTP port (traces from LiteLLM).
+  namespace: ai-observability
+  podLabel: phoenix
+  port: 6006
+
+agents:
+  # -- The only clients allowed to call the gateway: pods labelled
+  # ai.role=agent in this namespace.
+  namespace: ai-agents
+  roleLabel: agent
+
 postgres:
   # -- Run our own Postgres for LiteLLM (instead of the chart's bitnamilegacy subchart).
   enabled: true

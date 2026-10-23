@@ -1,0 +1,80 @@
+# Fixtures for kyverno-test.yaml. Not synced: the ai-policies Application only
+# reads the top level of policies/kyverno/.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: good-agent
+  namespace: ai-agents
+  labels:
+    ai.role: agent
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - name: agent
+      image: localhost/secure-ai-gateway/demo-agent:0.1.0
+      env:
+        - name: AGENT_KEY
+          valueFrom:
+            secretKeyRef:
+              name: agent-virtual-key
+              key: api-key
+---
+# Prompt-injection jackpot: a provider key in the agent's environment.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: agent-with-provider-key
+  namespace: ai-agents
+  labels:
+    ai.role: agent
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - name: agent
+      image: localhost/secure-ai-gateway/demo-agent:0.1.0
+      envFrom:
+        - secretRef:
+            name: llm-provider-keys
+---
+# Forgot to turn the ServiceAccount token off.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: agent-with-sa-token
+  namespace: ai-agents
+  labels:
+    ai.role: agent
+spec:
+  containers:
+    - name: agent
+      image: localhost/secure-ai-gateway/demo-agent:0.1.0
+---
+# The gateway itself legitimately holds provider keys: not an agent, so skipped.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gateway
+  namespace: ai-gateway
+  labels:
+    app.kubernetes.io/name: litellm
+spec:
+  containers:
+    - name: litellm
+      image: ghcr.io/berriai/litellm-non_root:v1.106.2
+      env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llm-provider-keys
+              key: ANTHROPIC_API_KEY
+---
+# An image from outside the allowlist, in an AI namespace.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unknown-registry
+  namespace: ai-models
+spec:
+  containers:
+    - name: model
+      image: docker.io/someone/llm-server:1.0

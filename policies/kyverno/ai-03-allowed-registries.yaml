@@ -1,0 +1,39 @@
+# VALIDATE (Audit): images in the AI namespaces come from an allowlist of
+# registries/repositories only. `localhost/...` is our locally built images:
+# that prefix can't be squatted on Docker Hub, so it's safe to allow.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: ai-allowed-registries
+  annotations:
+    policies.kyverno.io/title: Allowed image sources in the AI namespaces
+    policies.kyverno.io/category: Supply Chain
+spec:
+  background: true
+  rules:
+    - name: allowlisted-images
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["ai-*"]
+      validate:
+        failureAction: Audit
+        message: >-
+          Images in ai-* namespaces must come from ghcr.io/berriai,
+          docker.io/arizephoenix, the official postgres image, curlimages/curl
+          or localhost/secure-ai-gateway.
+        foreach:
+          - list: "request.object.spec.[containers, initContainers][]"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.image }}"
+                    operator: AnyNotIn
+                    value:
+                      - "ghcr.io/berriai/*"
+                      - "docker.io/arizephoenix/*"
+                      - "postgres:*"
+                      - "docker.io/library/postgres:*"
+                      - "curlimages/curl:*"
+                      - "localhost/secure-ai-gateway/*"

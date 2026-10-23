@@ -1,0 +1,27 @@
+# VALIDATE (Audit): AI agent pods must not mount a ServiceAccount token. An
+# agent never needs the Kubernetes API; a token in the pod is a free pivot for
+# anything that hijacks the agent (prompt injection, a malicious tool result).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: ai-agent-no-sa-token
+  annotations:
+    policies.kyverno.io/title: AI agents run without a ServiceAccount token
+    policies.kyverno.io/category: AI Platform
+spec:
+  background: true
+  rules:
+    - name: automount-disabled
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              selector:
+                matchLabels:
+                  ai.role: agent
+      validate:
+        failureAction: Audit
+        message: "Pods labelled ai.role=agent must set automountServiceAccountToken: false."
+        pattern:
+          spec:
+            automountServiceAccountToken: false

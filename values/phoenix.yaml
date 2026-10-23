@@ -1,0 +1,79 @@
+# Our values for the upstream Arize Phoenix chart (gitops/ai-observability.yaml).
+# One pod, SQLite on a PVC, auth on with an externally managed (sealed) secret,
+# no calls to the outside world.
+
+# -- SQLite on a PVC instead of the bundled Postgres subchart (one pod total).
+postgresql:
+  enabled: false
+persistence:
+  enabled: true
+  size: 2Gi
+
+image:
+  registry: docker.io
+  repository: arizephoenix/phoenix
+  tag: version-20.24.0-nonroot
+  pullPolicy: IfNotPresent
+
+# -- Reached through a port-forward (`make traces-ui`), never exposed.
+service:
+  type: ClusterIP
+ingress:
+  enabled: false
+
+server:
+  # -- Air-gapped: no Google Fonts etc. from the UI, no analytics.
+  allowExternalResources: false
+  telemetryEnabled: false
+  # -- Phoenix's own MCP server isn't part of this lab's attack surface.
+  enableMcpServer: false
+  enableMcpCodeMode: false
+
+auth:
+  enableAuth: true
+  # -- Secret comes from secrets/sealed/phoenix-secret.yaml (a chart-generated
+  # one would get new random values on every ArgoCD render).
+  createSecret: false
+  name: phoenix-secret
+  # Every key here becomes an env var read from that Secret.
+  secret:
+    - key: PHOENIX_SECRET
+    - key: PHOENIX_ADMIN_SECRET
+    - key: PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD
+    - key: PHOENIX_POSTGRES_PASSWORD
+    - key: PHOENIX_SMTP_PASSWORD
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1536Mi
+
+# The chart ships both off; Kyverno 02 wants the pod-level runAsNonRoot.
+securityContext:
+  pod:
+    enabled: true
+    fsGroup: 65532
+    fsGroupChangePolicy: OnRootMismatch
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  container:
+    enabled: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    privileged: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+# (With readOnlyRootFilesystem the chart itself mounts emptyDirs on /tmp,
+# /var/tmp, /var/log and /home/phoenix.)

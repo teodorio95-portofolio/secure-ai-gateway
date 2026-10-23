@@ -140,6 +140,58 @@ also tries to fetch its model cost map from GitHub at start-up;
 - ArgoCD fetches the OCI chart from `ghcr.io` without a repository secret
   (checked on ArgoCD v3.4.4).
 
+## Phase 4: tracing and metrics
+
+- **Phoenix as a second source of the `ai-observability` Application**, next to
+  our chart: the zone's namespace and cage stay ours, the workload is upstream.
+- **Auth on, secret sealed.** `createSecret: false` (a chart-generated random
+  secret changes on every ArgoCD render) and every key listed under
+  `auth.secret`, so each becomes a `secretKeyRef` — including
+  `PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD`, which otherwise defaults to `admin`.
+- **LiteLLM → Phoenix auth** reuses `PHOENIX_ADMIN_SECRET`, Phoenix's system
+  bearer token, sealed a second time for `ai-gateway` (the agent-key pattern).
+  Trade-off: it is an admin credential; a scoped system API key would need a
+  post-install step in the Phoenix UI/API, which breaks "declarative only".
+- **Air-gapped Phoenix**: telemetry and external UI resources off, its own MCP
+  server off, no egress allow at all.
+- **Prometheus**: LiteLLM's `prometheus` callback exposes `litellm_*` series on
+  the proxy's `/metrics/` (`/metrics` answers 307 to it — scrapers must follow
+  redirects or use the trailing slash). Checked at runtime: ~160 `litellm_`
+  lines after a few calls, no enterprise licence needed in 1.106.2. The lab has
+  no Prometheus; the endpoint is there for one.
+- **What a trace carries** (checked in Phoenix after `make agent-ask`):
+  `litellm.team_alias`, `litellm.key_alias`, `llm.user`, model requested vs.
+  served, prompt/completion tokens, cost, status, latency.
+
+## Phase 5: agent and tools
+
+- **MCP over streamable HTTP**, `mcp` 2.3.0 (`MCPServer`; v2 renamed FastMCP),
+  stateless JSON responses, read-only tools on fake data.
+- **One key per agent**, sealed for its namespace; no provider keys, no
+  ServiceAccount token, label `ai.role=agent` (what the gateway's ingress and
+  the Kyverno policies select on).
+- **Small-model reality**: `qwen2.5:1.5b` often answers with a *description*
+  of the tool call. The agent therefore resolves ticket IDs through MCP before
+  asking the model, and still offers the tools for models that call them.
+- Images: digest-pinned `python:3.13.17-slim-trixie`, dependencies from
+  `uv pip compile --generate-hashes --universal` installed with
+  `--require-hashes`, uid 65532, read-only root FS.
+
+## Phase 6: guardrails
+
+| Policy (Audit) | Rule |
+|----------------|------|
+| `ai-agent-secrets-allowlist` | `ai.role=agent` pods may reference only `agent-virtual-key` (env, envFrom, volumes) — an allowlist, so a new secret is denied by default |
+| `ai-agent-no-sa-token` | `ai.role=agent` pods set `automountServiceAccountToken: false` |
+| `ai-allowed-registries` | `ai-*` images come from `ghcr.io/berriai`, `docker.io/arizephoenix`, official `postgres`, `curlimages/curl`, `localhost/secure-ai-gateway` |
+
+`make kyverno-test` runs them against pass/fail/skip fixtures (also in CI).
+`make verify-ai-netpol` proves seven network paths with throwaway curl pods
+that carry the real workloads' labels, so the same Cilium policies apply.
+DNS for the gateway and the agents is allowed **only** through Cilium's DNS
+proxy (an L7 `dns` rule), which is what makes `toFQDNs` work; no Cilium config
+change was needed (1.19.5 ships `enable-l7-proxy: true`).
+
 ## Pinned versions (verified 2026-10-22; Sealed Secrets re-checked 2026-10-23)
 
 | Component | Version |
@@ -153,3 +205,7 @@ also tries to fetch its model cost map from GitHub at start-up;
 | Model | `qwen2.5:1.5b` |
 | Sealed Secrets chart / controller | 2.20.0 / 0.40.0 |
 | Kyverno CLI (matches the cluster's chart 3.8.1) | v1.18.1 |
+| Python base (`python`) | 3.13.17-slim-trixie |
+| `mcp` / `openai` (PyPI) | 2.3.0 / 3.36.1 |
+| `curlimages/curl` (netpol probes) | 8.23.0 |
+| Trivy / markdownlint-cli2 (CI) | 0.75.0 / 0.23.3 |

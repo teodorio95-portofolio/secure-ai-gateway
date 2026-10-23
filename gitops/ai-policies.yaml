@@ -1,0 +1,28 @@
+# AI-specific Kyverno guardrails (Audit), on top of secure-k8s-lab's own.
+# Plain directory source: only the top level of policies/kyverno/ is synced,
+# so the kyverno-test fixtures in tests/ never reach the cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-policies
+  namespace: argocd
+  annotations:
+    # Before the AI workloads (wave 0+), so they are admitted against them.
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/teodorio95-portofolio/secure-ai-gateway.git
+    targetRevision: HEAD
+    path: policies/kyverno
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

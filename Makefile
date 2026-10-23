@@ -8,10 +8,14 @@ SEALING_CERT   := secrets/sealing-cert.pem
 # Local images: built here, imported into k3d, never pushed to a registry.
 K3D_CLUSTER   ?= secure-lab
 OLLAMA_IMAGE  := localhost/secure-ai-gateway/ollama:0.40.8-qwen2.5-1.5b
+MCP_IMAGE     := localhost/secure-ai-gateway/mcp-server:0.1.0
+AGENT_IMAGE   := localhost/secure-ai-gateway/demo-agent:0.1.1
+Q             ?= What is the status of ticket TCK-1003 and how do I resolve it?
+KYVERNO       ?= kyverno
 
 .PHONY: help wire-lab apps-status verify-namespaces sealing-key sealing-key-install \
-	seal-secrets verify-secrets build-images gateway-ui gateway-test gateway-bootstrap \
-	lint secrets-scan
+	seal-secrets verify-secrets build-images gateway-ui gateway-test gateway-bootstrap traces-ui \
+	agent-ask verify-ai-netpol kyverno-test lint secrets-scan
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -72,9 +76,14 @@ verify-secrets: ## Prove every SealedSecret was decrypted into a Secret (names o
 			printf "%-18s %-22s %s\n" $$ns $$name $$r; \
 		done
 
-build-images: ## Build the local images (Ollama + baked model) and import them into k3d
+build-images: ## Build the local images (Ollama + model, MCP server, agent) and import them into k3d
 	docker build -t $(OLLAMA_IMAGE) images/ollama-model
-	k3d image import -c $(K3D_CLUSTER) $(OLLAMA_IMAGE)
+	docker build -t $(MCP_IMAGE) images/mcp-server
+	docker build -t $(AGENT_IMAGE) images/demo-agent
+	k3d image import -c $(K3D_CLUSTER) $(OLLAMA_IMAGE) $(MCP_IMAGE) $(AGENT_IMAGE)
+
+agent-ask: ## Ask the demo agent a question (Q="..."), through the gateway + MCP tools
+	kubectl -n ai-agents exec deploy/demo-agent -- python agent.py ask "$(Q)"
 
 gateway-ui: ## Port-forward LiteLLM (API + admin UI) to http://localhost:4000/ui
 	@echo "==> Admin login: user 'admin', password = the master key:"
@@ -84,11 +93,22 @@ gateway-ui: ## Port-forward LiteLLM (API + admin UI) to http://localhost:4000/ui
 gateway-test: ## End-to-end gateway checks (auth, team scope, fallback, budget) → PASS/FAIL
 	./scripts/gateway-test.sh
 
+traces-ui: ## Port-forward Arize Phoenix (traces) to http://localhost:6006
+	@echo "==> Login: admin@localhost / password:"
+	@echo "    kubectl -n ai-observability get secret phoenix-secret -o jsonpath='{.data.PHOENIX_DEFAULT_ADMIN_INITIAL_PASSWORD}' | base64 -d"
+	kubectl -n ai-observability port-forward svc/phoenix-svc 6006:6006
+
 gateway-bootstrap: ## Re-run the bootstrap Job (teams + agent key) without waiting for a sync
 	@kubectl -n ai-gateway delete job litellm-bootstrap --ignore-not-found
 	@kubectl -n argocd patch application litellm --type merge \
 		-p '{"operation":{"sync":{"syncStrategy":{"hook":{}}}}}'
 	@echo "==> Sync requested; follow with: kubectl -n ai-gateway logs -f job/litellm-bootstrap"
+
+verify-ai-netpol: ## Prove the AI network cage with labelled curl pods → PASS/FAIL per path
+	./scripts/verify-ai-netpol.sh
+
+kyverno-test: ## Run the AI Kyverno policies against good/bad fixtures (CLI v1.18.1, as in CI)
+	$(KYVERNO) test policies/kyverno/tests
 
 lint: ## helm lint + kubeconform every chart and Application (same as CI)
 	./scripts/lint.sh

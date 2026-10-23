@@ -1,0 +1,47 @@
+# kyverno test policies/kyverno/tests   (CLI v1.18.1, same as the cluster)
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: ai-policies
+policies:
+  - ../ai-01-agent-secrets-allowlist.yaml
+  - ../ai-02-agent-no-sa-token.yaml
+  - ../ai-03-allowed-registries.yaml
+resources:
+  - resources.yaml
+results:
+  - policy: ai-agent-secrets-allowlist
+    rule: only-agent-virtual-key
+    kind: Pod
+    resources: [good-agent, agent-with-sa-token]
+    result: pass
+  - policy: ai-agent-secrets-allowlist
+    rule: only-agent-virtual-key
+    kind: Pod
+    resources: [agent-with-provider-key]
+    result: fail
+  - policy: ai-agent-secrets-allowlist
+    rule: only-agent-virtual-key
+    kind: Pod
+    resources: [gateway]
+    result: skip
+  - policy: ai-agent-no-sa-token
+    rule: automount-disabled
+    kind: Pod
+    resources: [good-agent, agent-with-provider-key]
+    result: pass
+  - policy: ai-agent-no-sa-token
+    rule: automount-disabled
+    kind: Pod
+    resources: [agent-with-sa-token]
+    result: fail
+  - policy: ai-allowed-registries
+    rule: allowlisted-images
+    kind: Pod
+    resources: [good-agent, gateway]
+    result: pass
+  - policy: ai-allowed-registries
+    rule: allowlisted-images
+    kind: Pod
+    resources: [unknown-registry]
+    result: fail
