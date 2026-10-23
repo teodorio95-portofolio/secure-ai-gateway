@@ -11,6 +11,7 @@ traced there; the agent tags its calls so the traces say who asked.
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 
@@ -38,11 +39,37 @@ def openai_tools(mcp_tools) -> list[dict]:
     ]
 
 
+async def tool(mcp, name: str, args: dict) -> str:
+    print(f"[tool] {name}({args})", file=sys.stderr)
+    result = await mcp.call_tool(name, args)
+    return "\n".join(c.text for c in result.content if hasattr(c, "text"))
+
+
+async def prefetch(mcp, question: str) -> str:
+    """Look up every ticket ID in the question (and its runbook) up front.
+
+    A 1.5B local model often *describes* a tool call instead of emitting one, so
+    the agent doesn't rely on it for the basics; larger models still get the
+    tools and can call them themselves.
+    """
+    notes = []
+    for ticket_id in dict.fromkeys(re.findall(r"TCK-\d+", question.upper())):
+        ticket = await tool(mcp, "lookup_ticket", {"ticket_id": ticket_id})
+        notes.append(f"lookup_ticket({ticket_id}) -> {ticket}")
+        runbook = json.loads(ticket).get("runbook") if ticket.startswith("{") else None
+        if runbook:
+            notes.append(f"get_runbook({runbook}) -> {await tool(mcp, 'get_runbook', {'runbook_id': runbook})}")
+    return "\n".join(notes)
+
+
 async def ask(question: str) -> str:
     llm = OpenAI(base_url=GATEWAY, api_key=os.environ["AGENT_KEY"], timeout=180)
     async with Client(MCP_URL) as mcp:
         tools = openai_tools((await mcp.list_tools()).tools)
-        messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": question}]
+        messages = [{"role": "system", "content": SYSTEM}]
+        if context := await prefetch(mcp, question):
+            messages.append({"role": "system", "content": f"Tool results so far:\n{context}"})
+        messages.append({"role": "user", "content": question})
         for _ in range(MAX_STEPS):
             resp = llm.chat.completions.create(
                 model=MODEL, messages=messages, tools=tools, max_tokens=300,
@@ -55,10 +82,7 @@ async def ask(question: str) -> str:
                 return msg.content or ""
             messages.append(msg.model_dump(exclude_none=True))
             for call in msg.tool_calls:
-                args = json.loads(call.function.arguments or "{}")
-                print(f"[tool] {call.function.name}({args})", file=sys.stderr)
-                result = await mcp.call_tool(call.function.name, args)
-                text = "\n".join(c.text for c in result.content if hasattr(c, "text"))
+                text = await tool(mcp, call.function.name, json.loads(call.function.arguments or "{}"))
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": text})
         return "(stopped after too many tool calls)"
 

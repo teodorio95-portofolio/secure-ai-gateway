@@ -9,12 +9,13 @@ SEALING_CERT   := secrets/sealing-cert.pem
 K3D_CLUSTER   ?= secure-lab
 OLLAMA_IMAGE  := localhost/secure-ai-gateway/ollama:0.40.8-qwen2.5-1.5b
 MCP_IMAGE     := localhost/secure-ai-gateway/mcp-server:0.1.0
-AGENT_IMAGE   := localhost/secure-ai-gateway/demo-agent:0.1.0
+AGENT_IMAGE   := localhost/secure-ai-gateway/demo-agent:0.1.1
 Q             ?= What is the status of ticket TCK-1003 and how do I resolve it?
+KYVERNO       ?= kyverno
 
 .PHONY: help wire-lab apps-status verify-namespaces sealing-key sealing-key-install \
 	seal-secrets verify-secrets build-images gateway-ui gateway-test gateway-bootstrap traces-ui \
-	agent-ask lint secrets-scan
+	agent-ask verify-ai-netpol kyverno-test lint secrets-scan
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -102,6 +103,12 @@ gateway-bootstrap: ## Re-run the bootstrap Job (teams + agent key) without waiti
 	@kubectl -n argocd patch application litellm --type merge \
 		-p '{"operation":{"sync":{"syncStrategy":{"hook":{}}}}}'
 	@echo "==> Sync requested; follow with: kubectl -n ai-gateway logs -f job/litellm-bootstrap"
+
+verify-ai-netpol: ## Prove the AI network cage with labelled curl pods → PASS/FAIL per path
+	./scripts/verify-ai-netpol.sh
+
+kyverno-test: ## Run the AI Kyverno policies against good/bad fixtures (CLI v1.18.1, as in CI)
+	$(KYVERNO) test policies/kyverno/tests
 
 lint: ## helm lint + kubeconform every chart and Application (same as CI)
 	./scripts/lint.sh

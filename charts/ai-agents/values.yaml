@@ -29,7 +29,7 @@ mcpServer:
 agent:
   enabled: true
   # -- Local image (`make build-images`), never pulled from a registry.
-  image: localhost/secure-ai-gateway/demo-agent:0.1.0
+  image: localhost/secure-ai-gateway/demo-agent:0.1.1
   # -- Model alias the agent asks for (its key only allows `cheap` and `local`).
   model: local
   # -- Secret with the agent's virtual key (sealed for this namespace).
