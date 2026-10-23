@@ -1,0 +1,86 @@
+{{- if .Values.ollama.enabled }}
+# Ollama serving the baked-in model. Non-root, read-only root FS; the model
+# directory ships in the image, so nothing is downloaded at runtime.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ai-models.labels" . | nindent 4 }}
+    app.kubernetes.io/name: ollama
+spec:
+  selector:
+    app.kubernetes.io/name: ollama
+  ports:
+    - name: http
+      port: 11434
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ai-models.labels" . | nindent 4 }}
+    app.kubernetes.io/name: ollama
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ollama
+  template:
+    metadata:
+      labels:
+        {{- include "ai-models.labels" . | nindent 8 }}
+        app.kubernetes.io/name: ollama
+        ai.role: model
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ollama
+          image: {{ .Values.ollama.image }}
+          # Local image (k3d image import): never try a registry.
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 11434
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.ollama.resources | nindent 12 }}
+          volumeMounts:
+            # Ollama writes its identity key under $HOME/.ollama.
+            - name: home
+              mountPath: /home/ollama
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: home
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+{{- end }}
