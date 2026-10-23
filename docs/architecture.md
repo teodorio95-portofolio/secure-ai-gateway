@@ -84,6 +84,62 @@ into a local Ollama image (`localhost/secure-ai-gateway/...`, imported into k3d)
 The `ai-models` namespace therefore never needs internet egress. The trade-off
 is disk: the image exists in Docker and again in the k3d node.
 
+The upstream image is ~7 GB, 3.6 GB of it CUDA/JetPack libraries a CPU-only k3d
+node never loads. The final build stage copies only the `ollama` binary and its
+CPU libraries onto the same Ubuntu 24.04 base: **9 GB → 2.2 GB** with the model.
+
+## Phase 3: the gateway
+
+### Model aliases and failover
+
+| Alias | Backend | Without a paid key |
+|-------|---------|--------------------|
+| `default` | `anthropic/claude-sonnet-5-5` | falls back to `cheap`, then `local` |
+| `cheap` | `openai/gpt-6-luna` | falls back to `local` |
+| `local` | `ollama_chat/qwen2.5:1.5b` in `ai-models` | always available |
+
+Clients only ever see aliases, so swapping a provider is a config change, not a
+client change. The `local` model is priced at an internal **chargeback rate**
+($1 / $2 per million input / output tokens), so budgets, spend tracking and the
+budget-exceeded path all work in a lab with zero paid keys.
+
+### Teams, keys, budgets
+
+The PostSync bootstrap Job (`values/litellm-bootstrap.yaml`) creates
+`team-payments` (budget $5 / 30 days, all aliases) and `team-support` ($1, no
+`default`), each with token and request rate limits, and registers the demo
+agent's virtual key on `team-support` ($0.50, `cheap` + `local`). It looks each
+object up before creating it, so every sync is safe to re-run, and it reuses
+the proxy image (Python is already there — no extra image to pull or allow).
+
+### Network cage (this phase's part)
+
+| From | To | Why |
+|------|----|-----|
+| LiteLLM | Postgres :5432 | its database |
+| LiteLLM | `ollama.ai-models` :11434 | the local model |
+| LiteLLM | kube-dns :53 via Cilium's DNS proxy | needed for `toFQDNs` |
+| LiteLLM | `api.anthropic.com`, `api.openai.com` :443 | paid providers, nothing else |
+| bootstrap Job | LiteLLM :4000 | admin API |
+| Ollama | — | **no egress at all**, not even DNS |
+
+The policies ship in `charts/ai-gateway` (wave 0), not in the LiteLLM app: the
+chart's Prisma migrations Job is a **PreSync** hook, so it runs before anything
+in the LiteLLM app's own sync phase and must already reach Postgres. LiteLLM
+also tries to fetch its model cost map from GitHub at start-up;
+`LITELLM_LOCAL_MODEL_COST_MAP=True` uses the copy bundled in the image instead.
+
+### Things that bit (and the fix)
+
+- The chart mounts writable `emptyDir`s for a read-only root FS **only in the
+  Deployment**. The migrations Job crashed with "No usable temporary directory";
+  a shared `/var/tmp` volume (Python's second candidate) fixes both pods without
+  clashing with the chart's own `/tmp` mount.
+- The migrations Job is OOMKilled at 1 GiB right after `prisma migrate deploy`
+  succeeds; it gets 2 GiB.
+- ArgoCD fetches the OCI chart from `ghcr.io` without a repository secret
+  (checked on ArgoCD v3.4.4).
+
 ## Pinned versions (verified 2026-10-22; Sealed Secrets re-checked 2026-10-23)
 
 | Component | Version |
@@ -93,6 +149,7 @@ is disk: the image exists in Docker and again in the k3d node.
 | Postgres (`postgres`) | 18.6-alpine3.24 |
 | Arize Phoenix chart (`oci://registry-1.docker.io/arizephoenix/phoenix-helm`) | 12.0.24 |
 | Arize Phoenix image | version-20.24.0-nonroot |
-| Ollama (`ollama/ollama`) | 0.40.8 |
+| Ollama (`ollama/ollama`) | 0.40.8 (runtime copied onto `ubuntu:24.04`) |
+| Model | `qwen2.5:1.5b` |
 | Sealed Secrets chart / controller | 2.20.0 / 0.40.0 |
 | Kyverno CLI (matches the cluster's chart 3.8.1) | v1.18.1 |

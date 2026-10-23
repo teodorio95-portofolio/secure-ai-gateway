@@ -20,7 +20,7 @@ Built phase by phase; each phase is reviewed before the next one starts.
 | 0 | Exploration, versions, plan | ✅ |
 | 1 | Repo skeleton + GitOps wiring (namespaces + their cages) | ✅ |
 | 2 | Secrets (Sealed Secrets, BYO sealing key) | ✅ |
-| 3 | LiteLLM gateway + Postgres + bootstrap Job | ⏳ |
+| 3 | LiteLLM gateway + Postgres + bootstrap Job | ✅ |
 | 4 | Tracing (Arize Phoenix) + Prometheus metrics | ⏳ |
 | 5 | Demo agent + MCP server | ⏳ |
 | 6 | Cilium FQDN egress + AI-specific Kyverno policies | ⏳ |
@@ -84,6 +84,22 @@ make verify-secrets        # every SealedSecret → UNSEALED / MISSING
 
 Details, the secret inventory and rotation: [secrets/README.md](secrets/README.md).
 
+## The gateway
+
+[LiteLLM](https://github.com/BerriAI/litellm) is the only door to a model. Clients
+call aliases — `default` (Anthropic), `cheap` (OpenAI), `local` (Ollama in the
+cluster) — with a virtual key that belongs to a team with a budget and rate
+limits. Paid aliases fall back to the next provider and finally to `local`, so
+the lab works with **no paid API key at all**.
+
+```bash
+make build-images     # Ollama + qwen2.5:1.5b baked in → imported into k3d
+make gateway-test     # auth, team scope, provider fallback, budget → PASS/FAIL
+make gateway-ui       # http://localhost:4000/ui (admin: the master key)
+```
+
+Why it's built this way: [docs/architecture.md](docs/architecture.md#phase-3-the-gateway).
+
 ## Repository layout
 
 ```text
@@ -98,7 +114,8 @@ secure-ai-gateway/
 │   ├── ai-models.yaml
 │   ├── ai-observability.yaml
 │   ├── ai-agents.yaml
-│   └── ai-secrets.yaml          # syncs secrets/sealed/
+│   ├── ai-secrets.yaml          # syncs secrets/sealed/
+│   └── litellm.yaml             # the gateway (wave 1)
 ├── charts/                      # our own minimal charts: each zone carries its cage
 │   ├── ai-gateway/
 │   ├── ai-models/
@@ -108,7 +125,7 @@ secure-ai-gateway/
 ├── images/                      # Dockerfiles for the MCP server, agent, Ollama+model
 ├── secrets/                     # public sealing cert + SealedSecrets (ciphertext only)
 ├── policies/kyverno/            # AI-specific guardrails (Audit) + kyverno tests
-├── scripts/                     # lint.sh (same gate locally and in CI), seal-secrets.sh
+├── scripts/                     # lint.sh (same gate locally and in CI), seal-secrets.sh, gateway-test.sh
 ├── .github/workflows/           # CI
 └── docs/
     └── architecture.md          # design decisions and trade-offs
