@@ -22,8 +22,8 @@ for chart in charts/*/; do
   helm template "$(basename "$chart")" "$chart" | kc -
 done
 
-echo "==> kubeconform gitops/ + bootstrap/ + secrets/sealed/"
-kc gitops bootstrap secrets/sealed
+echo "==> kubeconform gitops/ + bootstrap/ + secrets/sealed/ + policies/kyverno/"
+kc gitops bootstrap secrets/sealed policies/kyverno/*.yaml
 
 # Upstream charts with our values: repo, chart, version and value files are read
 # from the multi-source Applications themselves, so the pins live in one place.

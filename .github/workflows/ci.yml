@@ -15,6 +15,9 @@ env:
   KUBECONFORM_VERSION: v0.7.0
   GITLEAKS_VERSION: 8.30.1
   YQ_VERSION: v4.53.6
+  KYVERNO_VERSION: v1.18.1 # same as the cluster (Kyverno chart 3.8.1)
+  TRIVY_VERSION: 0.75.0
+  MARKDOWNLINT_CLI2_VERSION: 0.23.3
 
 jobs:
   manifests:
@@ -49,3 +52,42 @@ jobs:
           curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin gitleaks
       - run: gitleaks git --redact --verbose .
+
+  kyverno:
+    name: kyverno test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Kyverno CLI (checksum-verified)
+        run: |
+          base="https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VERSION}"
+          tarball="kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+          curl -sSLO "$base/$tarball" -sSLO "$base/checksums.txt"
+          grep " ${tarball}\$" checksums.txt | sha256sum -c -
+          sudo tar -xzf "$tarball" -C /usr/local/bin kyverno
+      - run: kyverno test policies/kyverno/tests
+
+  trivy:
+    name: trivy config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Trivy (checksum-verified)
+        run: |
+          base="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+          tarball="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -sSLO "$base/$tarball" -sSLO "$base/trivy_${TRIVY_VERSION}_checksums.txt"
+          grep " ${tarball}\$" "trivy_${TRIVY_VERSION}_checksums.txt" | sha256sum -c -
+          sudo tar -xzf "$tarball" -C /usr/local/bin trivy
+      # Fail on HIGH/CRITICAL misconfigurations in charts, Dockerfiles and
+      # manifests. The kyverno-test fixtures are deliberately bad pods.
+      - run: |
+          trivy config --exit-code 1 --severity HIGH,CRITICAL \
+            --skip-dirs policies/kyverno/tests .
+
+  markdownlint:
+    name: markdownlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: npx --yes "markdownlint-cli2@${MARKDOWNLINT_CLI2_VERSION}" "**/*.md"
