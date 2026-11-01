@@ -20,10 +20,17 @@ for chart in charts/*/; do
   helm lint --strict "$chart"
   echo "==> kubeconform $chart"
   helm template "$(basename "$chart")" "$chart" | kc -
+  # Overlays (e.g. values-homelab.yaml) render on top of values.yaml.
+  for overlay in "$chart"values-*.yaml; do
+    [[ -e "$overlay" ]] || continue
+    echo "==> helm lint + kubeconform $chart with $(basename "$overlay")"
+    helm lint --strict "$chart" -f "$overlay"
+    helm template "$(basename "$chart")" "$chart" -f "$overlay" | kc -
+  done
 done
 
-echo "==> kubeconform gitops/ + bootstrap/ + secrets/sealed/ + policies/kyverno/"
-kc gitops bootstrap secrets/sealed policies/kyverno/*.yaml
+echo "==> kubeconform gitops/ + gitops-homelab/ + bootstrap/ + secrets/sealed/ + policies/kyverno/"
+kc gitops gitops-homelab bootstrap secrets/sealed policies/kyverno/*.yaml
 
 # Upstream charts with our values: repo, chart, version and value files are read
 # from the multi-source Applications themselves, so the pins live in one place.
@@ -32,7 +39,7 @@ if [[ "${LINT_UPSTREAM:-1}" == "0" ]]; then
   echo "==> upstream charts: skipped (LINT_UPSTREAM=0)"
   exit 0
 fi
-for app in gitops/*.yaml; do
+for app in gitops/*.yaml gitops-homelab/*.yaml; do
   src='.spec.sources[] | select(has("chart"))'
   chart=$(yq "$src | .chart" "$app")
   [[ -n "$chart" ]] || continue
