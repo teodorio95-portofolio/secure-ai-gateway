@@ -6,7 +6,8 @@ set -euo pipefail
 
 dir="$1" model="$2" ollama_img="$3" mcp_img="$4" agent_img="$5"
 
-docker build --build-arg MODEL="$model" -t "$ollama_img" "$dir/ollama-model"
+# VULKAN=1: ship the Vulkan backend + Mesa RADV so Ollama runs on the 760M iGPU.
+docker build --build-arg MODEL="$model" --build-arg VULKAN=1 -t "$ollama_img" "$dir/ollama-model"
 docker build -t "$mcp_img" "$dir/mcp-server"
 docker build -t "$agent_img" "$dir/demo-agent"
 

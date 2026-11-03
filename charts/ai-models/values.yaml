@@ -27,6 +27,13 @@ ollama:
     limits:
       cpu: "2"
       memory: 3Gi
+  gpu:
+    # -- Request one GPU from a device plugin (homelab: generic-device-plugin
+    # in secure-k8s-lab advertises the Radeon 760M as squat.ai/dri). Needs an
+    # image built with VULKAN=1. Off on k3d (CPU only).
+    enabled: false
+    # -- Extended resource name advertised by the device plugin.
+    resource: squat.ai/dri
 
 gateway:
   # -- Namespace allowed to call Ollama (the LiteLLM pods in it).

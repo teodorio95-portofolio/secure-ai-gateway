@@ -97,7 +97,9 @@ The same stack also runs 24/7 on a headless mini PC (Ryzen 5 7640HS, 32 GB,
 Debian 13 + k3s, managed over Tailscale) — see secure-k8s-lab's
 [homelab runbook](https://github.com/teodorio95-portofolio/secure-k8s-lab/blob/homelab/homelab/README.md).
 Only two Applications change, in [gitops-homelab/](gitops-homelab/): a bigger
-local model (`qwen3.5:4b`, [values-homelab.yaml](charts/ai-models/values-homelab.yaml))
+local model (`qwen3.5:9b` on the Radeon 760M iGPU through Vulkan, requested from
+the cluster's device plugin as `squat.ai/dri`, still PSA `restricted`;
+[values-homelab.yaml](charts/ai-models/values-homelab.yaml))
 and the gateway's `local` alias pointing at it
 ([litellm-homelab.yaml](values/litellm-homelab.yaml)). Everything else syncs
 from `gitops/` unchanged.

@@ -5,16 +5,21 @@
 ollama:
   # -- Built on the homelab itself (amd64) by `make homelab-images` and imported
   # into k3s's containerd; never pulled from a registry.
-  image: localhost/secure-ai-gateway/ollama:0.40.8-qwen3.5-4b
+  # VULKAN=1 build: Vulkan backend + Mesa RADV for the Radeon 760M.
+  image: localhost/secure-ai-gateway/ollama:0.40.8-qwen3.5-9b-vulkan
   # -- Model tag inside the image (LiteLLM's `local` alias in
   # values/litellm-homelab.yaml points at it).
-  model: qwen3.5:4b
-  # -- ~3 GB of weights + KV cache. The CPU limit leaves the other ~half of the
-  # 12 threads to the rest of the cluster while a generation runs.
+  model: qwen3.5:9b
+  # -- Weights (~6 GB) and KV cache live in the iGPU's 8 GB UMA carve-out
+  # (BIOS), outside this cgroup; memory here covers the runtime, the mmap'd
+  # model file during load and a CPU fallback for layers that don't fit.
+  # The CPU limit leaves ~half of the 12 threads to the rest of the cluster.
   resources:
     requests:
       cpu: 500m
-      memory: 4Gi
+      memory: 2Gi
     limits:
       cpu: "6"
-      memory: 8Gi
+      memory: 12Gi
+  gpu:
+    enabled: true

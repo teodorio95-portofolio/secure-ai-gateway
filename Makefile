@@ -16,8 +16,9 @@ KYVERNO       ?= kyverno
 # reached over Tailscale. Its model must match charts/ai-models/values-homelab.yaml.
 HOMELAB_HOST         ?= homelab
 HOMELAB_USER         ?= teodorio
-HOMELAB_MODEL        ?= qwen3.5:4b
-HOMELAB_OLLAMA_IMAGE := localhost/secure-ai-gateway/ollama:0.40.8-$(subst :,-,$(HOMELAB_MODEL))
+# Served on the Radeon 760M through Vulkan (image built with VULKAN=1).
+HOMELAB_MODEL        ?= qwen3.5:9b
+HOMELAB_OLLAMA_IMAGE := localhost/secure-ai-gateway/ollama:0.40.8-$(subst :,-,$(HOMELAB_MODEL))-vulkan
 
 .PHONY: help wire-lab apps-status verify-namespaces sealing-key sealing-key-install \
 	seal-secrets verify-secrets build-images gateway-ui gateway-test gateway-bootstrap traces-ui \

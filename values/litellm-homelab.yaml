@@ -19,7 +19,7 @@ proxy_config:
     # -- In-cluster model on the homelab (see charts/ai-models/values-homelab.yaml).
     - model_name: local
       litellm_params:
-        model: ollama_chat/qwen3.5:4b
+        model: ollama_chat/qwen3.5:9b
         api_base: http://ollama.ai-models.svc.cluster.local:11434
         input_cost_per_token: 0.000001
         output_cost_per_token: 0.000002
