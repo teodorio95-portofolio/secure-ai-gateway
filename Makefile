@@ -12,10 +12,17 @@ MCP_IMAGE     := localhost/secure-ai-gateway/mcp-server:0.1.0
 AGENT_IMAGE   := localhost/secure-ai-gateway/demo-agent:0.1.1
 Q             ?= What is the status of ticket TCK-1003 and how do I resolve it?
 KYVERNO       ?= kyverno
+# Homelab mini PC (bare-metal k3s, see secure-k8s-lab/homelab/README.md),
+# reached over Tailscale. Its model must match charts/ai-models/values-homelab.yaml.
+HOMELAB_HOST         ?= homelab
+HOMELAB_USER         ?= teodorio
+# Served on the Radeon 760M through Vulkan (image built with VULKAN=1).
+HOMELAB_MODEL        ?= qwen3.5:9b
+HOMELAB_OLLAMA_IMAGE := localhost/secure-ai-gateway/ollama:0.40.8-$(subst :,-,$(HOMELAB_MODEL))-vulkan
 
 .PHONY: help wire-lab apps-status verify-namespaces sealing-key sealing-key-install \
 	seal-secrets verify-secrets build-images gateway-ui gateway-test gateway-bootstrap traces-ui \
-	agent-ask verify-ai-netpol kyverno-test lint secrets-scan
+	agent-ask verify-ai-netpol kyverno-test lint secrets-scan wire-lab-homelab homelab-images
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -25,6 +32,11 @@ wire-lab: ## Copy the ArgoCD Application into secure-k8s-lab (then commit + push
 	cp bootstrap/secure-k8s-lab/secure-ai-gateway.yaml $(LAB_DIR)/apps/argocd-apps/
 	@echo "==> Added $(LAB_DIR)/apps/argocd-apps/secure-ai-gateway.yaml"
 	@echo "    Commit + push it in secure-k8s-lab; the root app picks it up."
+
+wire-lab-homelab: ## Copy the homelab Application into secure-k8s-lab's apps/homelab/
+	mkdir -p $(LAB_DIR)/apps/homelab
+	cp bootstrap/secure-k8s-lab/secure-ai-gateway-homelab.yaml $(LAB_DIR)/apps/homelab/secure-ai-gateway.yaml
+	@echo "==> Added $(LAB_DIR)/apps/homelab/secure-ai-gateway.yaml (used by root-app-homelab.yaml)"
 
 apps-status: ## Show sync/health of the AI stack's ArgoCD Applications
 	@kubectl -n argocd get applications $(AI_APPS) \
@@ -81,6 +93,11 @@ build-images: ## Build the local images (Ollama + model, MCP server, agent) and 
 	docker build -t $(MCP_IMAGE) images/mcp-server
 	docker build -t $(AGENT_IMAGE) images/demo-agent
 	k3d image import -c $(K3D_CLUSTER) $(OLLAMA_IMAGE) $(MCP_IMAGE) $(AGENT_IMAGE)
+
+homelab-images: ## Build the local images on the homelab mini PC (amd64) and import them into its k3s
+	HOMELAB_HOST=$(HOMELAB_HOST) HOMELAB_USER=$(HOMELAB_USER) HOMELAB_MODEL=$(HOMELAB_MODEL) \
+	HOMELAB_OLLAMA_IMAGE=$(HOMELAB_OLLAMA_IMAGE) MCP_IMAGE=$(MCP_IMAGE) AGENT_IMAGE=$(AGENT_IMAGE) \
+		./scripts/homelab-images.sh
 
 agent-ask: ## Ask the demo agent a question (Q="..."), through the gateway + MCP tools
 	kubectl -n ai-agents exec deploy/demo-agent -- python agent.py ask "$(Q)"

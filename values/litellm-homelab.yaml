@@ -1,0 +1,25 @@
+# Homelab overrides for the LiteLLM chart (gitops-homelab/litellm.yaml), applied
+# after values/litellm.yaml and values/litellm-bootstrap.yaml.
+#
+# Helm replaces lists wholesale, so model_list is repeated in full; only the
+# `local` entry differs from values/litellm.yaml (the homelab's bigger model).
+# Keep the paid entries in sync with that file.
+proxy_config:
+  model_list:
+    # -- Best paid model. Needs ANTHROPIC_API_KEY; otherwise falls back.
+    - model_name: default
+      litellm_params:
+        model: anthropic/claude-sonnet-5-5
+        api_key: os.environ/ANTHROPIC_API_KEY
+    # -- Cheap paid model on a second provider (provider failover).
+    - model_name: cheap
+      litellm_params:
+        model: openai/gpt-6-luna
+        api_key: os.environ/OPENAI_API_KEY
+    # -- In-cluster model on the homelab (see charts/ai-models/values-homelab.yaml).
+    - model_name: local
+      litellm_params:
+        model: ollama_chat/qwen3.5:9b
+        api_base: http://ollama.ai-models.svc.cluster.local:11434
+        input_cost_per_token: 0.000001
+        output_cost_per_token: 0.000002

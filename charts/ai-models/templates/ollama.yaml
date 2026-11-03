@@ -70,8 +70,14 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          {{- $res := deepCopy .Values.ollama.resources }}
+          {{- if .Values.ollama.gpu.enabled }}
+          # The iGPU's render node, handed over by the device plugin (no
+          # hostPath, so PSA restricted still holds).
+          {{- $_ := set $res.limits .Values.ollama.gpu.resource 1 }}
+          {{- end }}
           resources:
-            {{- toYaml .Values.ollama.resources | nindent 12 }}
+            {{- toYaml $res | nindent 12 }}
           volumeMounts:
             # Ollama writes its identity key under $HOME/.ollama.
             - name: home

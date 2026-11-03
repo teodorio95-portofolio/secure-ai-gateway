@@ -1,0 +1,31 @@
+# Homelab variant of gitops/ai-models.yaml: same chart, plus values-homelab.yaml
+# (bigger model, sized for the 32 GB mini PC). Replaces the original in the
+# homelab app-of-apps (bootstrap/secure-k8s-lab/secure-ai-gateway-homelab.yaml).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-models
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/teodorio95-portofolio/secure-ai-gateway.git
+    # Switch to HEAD once the homelab branch is merged.
+    targetRevision: homelab
+    path: charts/ai-models
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-homelab.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    # The chart templates the namespace itself (with the PSA labels).
+    namespace: ai-models
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

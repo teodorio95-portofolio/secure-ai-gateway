@@ -91,6 +91,30 @@ make traces-ui             # http://localhost:6006 — every call above, traced
 A fork runs `make sealing-key && make seal-secrets` once first and commits the
 result: the ciphertext in this repo only opens with the author's key.
 
+## On a real box (homelab)
+
+The same stack also runs 24/7 on a headless mini PC (Ryzen 5 7640HS, 32 GB,
+Debian 13 + k3s, managed over Tailscale) — see secure-k8s-lab's
+[homelab runbook](https://github.com/teodorio95-portofolio/secure-k8s-lab/blob/homelab/homelab/README.md).
+Only two Applications change, in [gitops-homelab/](gitops-homelab/): a bigger
+local model (`qwen3.5:9b` on the Radeon 760M iGPU through Vulkan, requested from
+the cluster's device plugin as `squat.ai/dri`, still PSA `restricted`;
+[values-homelab.yaml](charts/ai-models/values-homelab.yaml))
+and the gateway's `local` alias pointing at it
+([litellm-homelab.yaml](values/litellm-homelab.yaml)). Everything else syncs
+from `gitops/` unchanged.
+
+```bash
+# after `make homelab-up` in secure-k8s-lab
+export KUBECONFIG=~/.kube/homelab.yaml
+make sealing-key-install   # same BYO key → the same SealedSecrets decrypt
+make homelab-images        # built ON the mini PC (amd64), imported into its k3s
+make apps-status
+```
+
+On a real Linux node Falco captures syscalls, so the agent rules in
+[docs/falco/](docs/falco/ai-agent-rules.yaml) actually fire there.
+
 ## Secrets
 
 Secrets are [Sealed Secrets](https://github.com/bitnami/sealed-secrets)
@@ -175,7 +199,9 @@ secure-ai-gateway/
 ├── Makefile                     # lifecycle + verification targets
 ├── bootstrap/
 │   └── secure-k8s-lab/
-│       └── secure-ai-gateway.yaml  # the one Application added to secure-k8s-lab
+│       ├── secure-ai-gateway.yaml          # the one Application added to secure-k8s-lab
+│       └── secure-ai-gateway-homelab.yaml  # its homelab variant (gitops/ + gitops-homelab/)
+├── gitops-homelab/              # homelab overrides: ai-models + litellm (bigger model)
 ├── gitops/                      # child ArgoCD Applications
 │   ├── sealed-secrets.yaml      # controller in kube-system (wave -1)
 │   ├── ai-gateway.yaml          # one per zone (wave 0)
