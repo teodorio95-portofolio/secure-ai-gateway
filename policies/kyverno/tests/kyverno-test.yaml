@@ -13,12 +13,12 @@ results:
   - policy: ai-agent-secrets-allowlist
     rule: only-agent-virtual-key
     kind: Pod
-    resources: [good-agent, agent-with-sa-token]
+    resources: [good-agent, agent-with-sa-token, hermes-own-secret]
     result: pass
   - policy: ai-agent-secrets-allowlist
     rule: only-agent-virtual-key
     kind: Pod
-    resources: [agent-with-provider-key]
+    resources: [agent-with-provider-key, hermes-other-users-secret, hermes-unlabelled]
     result: fail
   - policy: ai-agent-secrets-allowlist
     rule: only-agent-virtual-key
@@ -28,7 +28,7 @@ results:
   - policy: ai-agent-no-sa-token
     rule: automount-disabled
     kind: Pod
-    resources: [good-agent, agent-with-provider-key]
+    resources: [good-agent, agent-with-provider-key, hermes-own-secret]
     result: pass
   - policy: ai-agent-no-sa-token
     rule: automount-disabled
@@ -38,7 +38,7 @@ results:
   - policy: ai-allowed-registries
     rule: allowlisted-images
     kind: Pod
-    resources: [good-agent, gateway]
+    resources: [good-agent, gateway, hermes-own-secret]
     result: pass
   - policy: ai-allowed-registries
     rule: allowlisted-images

@@ -49,4 +49,14 @@ check "gateway -> api.anthropic.com (allowed)" ai-gateway "$GATEWAY" https://api
 check "gateway -> example.com (not allowed)"   ai-gateway "$GATEWAY" https://example.com BLOCKED
 check "models zone -> internet (ollama.com)"   ai-models  "ai.role=netpol-probe" https://ollama.com BLOCKED
 
+# Homelab only: the family's Hermes zone (charts/ai-hermes). HERMES=1 to include.
+if [[ "${HERMES:-0}" == "1" ]]; then
+  HERMES_POD="app.kubernetes.io/name=hermes,ai.role=agent,ai.user=netpol-probe"
+  check "hermes -> internet (example.com)"       ai-hermes  "$HERMES_POD" https://example.com BLOCKED
+  check "hermes -> gateway (LiteLLM :4000)"      ai-hermes  "$HERMES_POD" http://litellm.ai-gateway.svc.cluster.local:4000/health/liveliness REACHABLE
+  check "hermes -> Ollama directly (bypass)"     ai-hermes  "$HERMES_POD" http://ollama.ai-models.svc.cluster.local:11434/ BLOCKED
+  check "hermes -> the other user's dashboard"   ai-hermes  "$HERMES_POD" http://hermes-teodora.ai-hermes.svc.cluster.local:9119/ BLOCKED
+  check "gateway -> api.deepseek.com (allowed)"  ai-gateway "$GATEWAY" https://api.deepseek.com/ REACHABLE
+fi
+
 exit "$FAILED"

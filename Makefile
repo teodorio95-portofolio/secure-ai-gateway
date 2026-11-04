@@ -19,10 +19,16 @@ HOMELAB_USER         ?= teodorio
 # Served on the Radeon 760M through Vulkan (image built with VULKAN=1).
 HOMELAB_MODEL        ?= qwen3.5:9b
 HOMELAB_OLLAMA_IMAGE := localhost/secure-ai-gateway/ollama:0.40.8-$(subst :,-,$(HOMELAB_MODEL))-vulkan
+# Family Hermes (homelab, charts/ai-hermes): <user>:<tailnet https port>:<ClusterIP>.
+# The ClusterIPs must match charts/ai-hermes/values.yaml.
+HERMES_SERVE ?= teodor:9443:10.43.219.19 teodora:9444:10.43.219.20
+HERMES_USERS := $(foreach s,$(HERMES_SERVE),$(word 1,$(subst :, ,$(s))))
+LITELLM_PIN  := 1.106.2
 
 .PHONY: help wire-lab apps-status verify-namespaces sealing-key sealing-key-install \
 	seal-secrets verify-secrets build-images gateway-ui gateway-test gateway-bootstrap traces-ui \
-	agent-ask verify-ai-netpol kyverno-test lint secrets-scan wire-lab-homelab homelab-images
+	agent-ask verify-ai-netpol kyverno-test lint secrets-scan wire-lab-homelab homelab-images \
+	hermes-configure hermes-serve hermes-status check-budget-fallback
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -123,6 +129,32 @@ gateway-bootstrap: ## Re-run the bootstrap Job (teams + agent key) without waiti
 
 verify-ai-netpol: ## Prove the AI network cage with labelled curl pods → PASS/FAIL per path
 	./scripts/verify-ai-netpol.sh
+
+hermes-configure: ## (homelab) Point each family Hermes at its LiteLLM alias, then restart it
+	@for u in $(HERMES_USERS); do \
+		echo "==> hermes-$$u"; \
+		kubectl -n ai-hermes exec deploy/hermes-$$u -- sh -c \
+			'hermes config set model.provider custom \
+			&& hermes config set model.base_url "$$LITELLM_BASE_URL" \
+			&& hermes config set model.default "$$LITELLM_MODEL" \
+			&& hermes config set model.api_key "\$${OPENAI_API_KEY}"' \
+		&& kubectl -n ai-hermes rollout restart deploy/hermes-$$u; \
+	done
+
+hermes-serve: ## (homelab) Publish each Hermes dashboard on the tailnet with `tailscale serve` (HTTPS)
+	@for s in $(HERMES_SERVE); do \
+		u=$${s%%:*}; rest=$${s#*:}; port=$${rest%%:*}; ip=$${rest#*:}; \
+		echo "==> $$u: https://$(HOMELAB_HOST).<tailnet>.ts.net:$$port -> $$ip:9119"; \
+		ssh $(HOMELAB_USER)@$(HOMELAB_HOST) "sudo tailscale serve --bg --https=$$port http://$$ip:9119"; \
+	done
+	@echo "==> Logins for the Hermex app: $(SEALING_DIR)/hermes-<user>.env"
+
+hermes-status: ## (homelab) Hermes pods, their volumes and what tailscale serve publishes
+	kubectl -n ai-hermes get pods,pvc,svc -o wide
+	ssh $(HOMELAB_USER)@$(HOMELAB_HOST) tailscale serve status
+
+check-budget-fallback: ## Offline: prove a spent per-person DeepSeek budget falls back to `local` (pinned LiteLLM)
+	uv run --no-project --with litellm==$(LITELLM_PIN) python scripts/check-budget-fallback.py
 
 kyverno-test: ## Run the AI Kyverno policies against good/bad fixtures (CLI v1.18.1, as in CI)
 	$(KYVERNO) test policies/kyverno/tests

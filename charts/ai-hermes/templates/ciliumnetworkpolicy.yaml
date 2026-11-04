@@ -1,0 +1,45 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $ns := .Values.namespace.name }}
+# Hermes's whole world: the LiteLLM port plus DNS through Cilium's DNS proxy.
+# No internet (web/browser tools stay dark), no other namespace, no API server.
+# In: only the host itself, where `tailscale serve` proxies the tailnet to the
+# fixed ClusterIP; a ClusterIP is not reachable from the LAN.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: hermes
+  namespace: {{ $ns }}
+  labels:
+    {{- include "ai-hermes.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: hermes
+  ingress:
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: {{ .Values.dashboardPort | quote }}
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.gateway.namespace }}
+            app.kubernetes.io/name: litellm
+      toPorts:
+        - ports:
+            - port: {{ .Values.gateway.port | quote }}
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+{{- end }}

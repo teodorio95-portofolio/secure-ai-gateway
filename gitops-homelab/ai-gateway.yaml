@@ -1,0 +1,31 @@
+# Homelab variant of gitops/ai-gateway.yaml: same chart, plus values-homelab.yaml
+# (DeepSeek in the FQDN allowlist, ai-hermes as a gateway client). Replaces the
+# original in the homelab app-of-apps (bootstrap/secure-k8s-lab/secure-ai-gateway-homelab.yaml).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-gateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/teodorio95-portofolio/secure-ai-gateway.git
+    # Switch to HEAD once the homelab branch is merged.
+    targetRevision: homelab
+    path: charts/ai-gateway
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-homelab.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    # The chart templates the namespace itself (with the PSA labels).
+    namespace: ai-gateway
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

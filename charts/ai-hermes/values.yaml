@@ -1,0 +1,58 @@
+namespace:
+  # -- Create the namespace as part of the chart (carries the PSA labels).
+  create: true
+  name: ai-hermes
+  podSecurity:
+    # -- `baseline`, not `restricted` like the other ai-* zones: the official
+    # image starts as root under s6-overlay (/init chowns the data volume), then
+    # runs every Hermes process as uid 10000. Baseline still forbids privileged
+    # pods, host namespaces/paths/ports and extra capabilities.
+    enforce: baseline
+    # -- Report what keeps it from `restricted` on every apply.
+    warn: restricted
+
+networkPolicy:
+  # -- Ship a default-deny (ingress + egress) policy with the chart. Explicit
+  # allows are added on top as CiliumNetworkPolicies.
+  enabled: true
+
+# -- Official image, pinned by tag + multi-arch index digest. Bump both together.
+image: docker.io/nousresearch/hermes-agent:v0.22.7@sha256:e6d81ae52ebf6a43efa529701405509f20054ba818f179ddd748bed4f8af584c
+
+gateway:
+  # -- Where LiteLLM runs; the only model endpoint Hermes may reach.
+  namespace: ai-gateway
+  service: litellm
+  port: 4000
+
+# -- Dashboard port (`hermes dashboard`), what the Hermex app talks to.
+dashboardPort: 9119
+
+# -- One Hermes per person: its own Deployment, data volume (sessions, memory,
+# skills), Secret `hermes-<name>` and LiteLLM alias. `clusterIP` is fixed so
+# `tailscale serve` on the box can keep pointing at it (k3s service CIDR
+# 10.43.0.0/16); the Service is ClusterIP only, never on the LAN.
+users:
+  - name: teodor
+    model: chat-teodor
+    clusterIP: 10.43.219.19
+    # -- Optional: the tailnet URL Hermex uses, e.g.
+    # https://homelab.<tailnet>.ts.net:9443 (links and cookie settings).
+    publicUrl: ""
+  - name: teodora
+    model: chat-teodora
+    clusterIP: 10.43.219.20
+    publicUrl: ""
+
+storage:
+  # -- k3s's local-path provisioner.
+  storageClass: local-path
+  size: 5Gi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi

@@ -1,0 +1,16 @@
+# Homelab overrides for the ai-gateway chart (gitops-homelab/ai-gateway.yaml),
+# layered on top of values.yaml.
+
+litellm:
+  # -- The family's chat aliases call DeepSeek (values/litellm-homelab.yaml).
+  # Lists replace wholesale: keep the first two in sync with values.yaml.
+  providerFQDNs:
+    - api.anthropic.com
+    - api.openai.com
+    - api.deepseek.com
+
+agents:
+  # -- Hermes (charts/ai-hermes) runs in its own namespace: PSA baseline, since
+  # its image starts as root under s6-overlay before dropping to uid 10000.
+  extraNamespaces:
+    - ai-hermes

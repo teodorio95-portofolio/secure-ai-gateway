@@ -1,0 +1,136 @@
+{{- $ns := .Values.namespace.name }}
+{{- range $i, $u := .Values.users }}
+{{- if $i }}
+---
+{{- end }}
+# {{ $u.name }}'s Hermes: sessions, memory and skills live on this volume only.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-{{ $u.name }}-data
+  namespace: {{ $ns }}
+  labels:
+    {{- include "ai-hermes.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: hermes
+    ai.user: {{ $u.name }}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ $.Values.storage.storageClass }}
+  resources:
+    requests:
+      storage: {{ $.Values.storage.size }}
+---
+# ClusterIP only, at a fixed address for `tailscale serve` on the box.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hermes-{{ $u.name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "ai-hermes.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: hermes
+    ai.user: {{ $u.name }}
+spec:
+  type: ClusterIP
+  {{- with $u.clusterIP }}
+  clusterIP: {{ . }}
+  {{- end }}
+  selector:
+    app.kubernetes.io/name: hermes
+    ai.user: {{ $u.name }}
+  ports:
+    - name: dashboard
+      port: {{ $.Values.dashboardPort }}
+      targetPort: dashboard
+---
+# Holds only its own Secret `hermes-{{ $u.name }}`: the LiteLLM virtual key (as
+# OPENAI_API_KEY, a name Hermes keeps out of its tools' subprocesses) and the
+# dashboard's basic-auth login. No provider key, no ServiceAccount token.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes-{{ $u.name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "ai-hermes.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: hermes
+    ai.user: {{ $u.name }}
+spec:
+  replicas: 1
+  # One writer per data volume (SQLite in WAL mode).
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hermes
+      ai.user: {{ $u.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "ai-hermes.labels" $ | nindent 8 }}
+        app.kubernetes.io/name: hermes
+        ai.user: {{ $u.name }}
+        ai.role: agent
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: hermes
+          image: {{ $.Values.image }}
+          imagePullPolicy: IfNotPresent
+          # The image's /init (s6-overlay) supervises the gateway and, with
+          # HERMES_DASHBOARD=1, the dashboard next to it.
+          args: ["gateway", "run"]
+          env:
+            - name: HERMES_DASHBOARD
+              value: "1"
+            - name: HERMES_DASHBOARD_HOST
+              value: 0.0.0.0
+            - name: HERMES_DASHBOARD_PORT
+              value: {{ $.Values.dashboardPort | quote }}
+            {{- with $u.publicUrl }}
+            - name: HERMES_DASHBOARD_PUBLIC_URL
+              value: {{ . | quote }}
+            {{- end }}
+            # Read by `make hermes-configure` (model.base_url / model.default).
+            - name: LITELLM_BASE_URL
+              value: http://{{ $.Values.gateway.service }}.{{ $.Values.gateway.namespace }}.svc.cluster.local:{{ $.Values.gateway.port }}/v1
+            - name: LITELLM_MODEL
+              value: {{ $u.model }}
+          envFrom:
+            # OPENAI_API_KEY + HERMES_DASHBOARD_BASIC_AUTH_{USERNAME,PASSWORD,SECRET}
+            # (WITH_HERMES=1 make seal-secrets).
+            - secretRef:
+                name: hermes-{{ $u.name }}
+          ports:
+            - name: dashboard
+              containerPort: {{ $.Values.dashboardPort }}
+          startupProbe:
+            tcpSocket:
+              port: dashboard
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: dashboard
+            periodSeconds: 15
+          securityContext:
+            # Root only for /init's chown + privilege drop: no escalation and
+            # only the capabilities that needs (baseline allows these).
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL", "SETGID", "SETUID"]
+          resources:
+            {{- toYaml $.Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: hermes-{{ $u.name }}-data
+{{- end }}

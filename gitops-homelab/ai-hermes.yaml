@@ -1,0 +1,31 @@
+# Homelab only: Hermes Agent for the family (charts/ai-hermes), one instance per
+# person, reached from the Hermex iPhone app over Tailscale. Its own zone
+# (ai-hermes, PSA baseline), like ai-agents it may only call the gateway.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-hermes
+  namespace: argocd
+  annotations:
+    # With the other zones and their SealedSecrets (wave 0).
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/teodorio95-portofolio/secure-ai-gateway.git
+    # Switch to HEAD once the homelab branch is merged.
+    targetRevision: homelab
+    path: charts/ai-hermes
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    # The chart templates the namespace itself (with the PSA labels).
+    namespace: ai-hermes
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

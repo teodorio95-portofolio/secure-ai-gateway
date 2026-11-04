@@ -96,13 +96,14 @@ result: the ciphertext in this repo only opens with the author's key.
 The same stack also runs 24/7 on a headless mini PC (Ryzen 5 7640HS, 32 GB,
 Debian 13 + k3s, managed over Tailscale) — see secure-k8s-lab's
 [homelab runbook](https://github.com/teodorio95-portofolio/secure-k8s-lab/blob/homelab/homelab/README.md).
-Only two Applications change, in [gitops-homelab/](gitops-homelab/): a bigger
-local model (`qwen3.5:9b` on the Radeon 760M iGPU through Vulkan, requested from
-the cluster's device plugin as `squat.ai/dri`, still PSA `restricted`;
-[values-homelab.yaml](charts/ai-models/values-homelab.yaml))
-and the gateway's `local` alias pointing at it
-([litellm-homelab.yaml](values/litellm-homelab.yaml)). Everything else syncs
-from `gitops/` unchanged.
+Three Applications change and one is added, in [gitops-homelab/](gitops-homelab/):
+a bigger local model (`qwen3.5:9b` on the Radeon 760M iGPU through Vulkan,
+requested from the cluster's device plugin as `squat.ai/dri`, still PSA
+`restricted`; [values-homelab.yaml](charts/ai-models/values-homelab.yaml)), the
+gateway's `local` alias pointing at it plus the family's DeepSeek aliases
+([litellm-homelab.yaml](values/litellm-homelab.yaml)), the gateway zone
+([values-homelab.yaml](charts/ai-gateway/values-homelab.yaml)) and the family
+chat zone below. Everything else syncs from `gitops/` unchanged.
 
 ```bash
 # after `make homelab-up` in secure-k8s-lab
@@ -114,6 +115,51 @@ make apps-status
 
 On a real Linux node Falco captures syscalls, so the agent rules in
 [docs/falco/](docs/falco/ai-agent-rules.yaml) actually fire there.
+
+### Family chat: Hermes + the Hermex iPhone app
+
+Two people, two [Hermes Agent](https://github.com/NousResearch/hermes-agent)
+instances ([charts/ai-hermes](charts/ai-hermes/)), each with its own history
+volume, dashboard login and LiteLLM virtual key. The
+[Hermex](https://apps.apple.com/app/id6767006319) app on each iPhone talks to
+its own instance over Tailscale. The ChatGPT / Claude subscriptions stay in
+their official apps: this path is pay-per-use through the gateway.
+
+```mermaid
+flowchart LR
+    T1[Hermex · teodor] -->|tailnet :9443| S1[hermes-teodor]
+    T2[Hermex · teodora] -->|tailnet :9444| S2[hermes-teodora]
+    subgraph hermes["ai-hermes — PSA baseline, default-deny"]
+        S1
+        S2
+    end
+    S1 -->|key teodor| L[LiteLLM]
+    S2 -->|key teodora| L
+    L -->|chat-teodor / chat-teodora<br/>$5 per month each| D[api.deepseek.com]
+    L -->|budget spent or DeepSeek down| O[local qwen3.5:9b]
+```
+
+| | |
+|---|---|
+| Budget | `chat-teodor` and `chat-teodora` are DeepSeek aliases with `max_budget: 5.0` / `30d` on the deployment. When one is spent, the router drops it and that person falls back to `local`; the other is untouched. A key or team budget would refuse the request instead, so the per-key `max_budget` (15) is only a runaway ceiling. `make check-budget-fallback` (and CI) proves it offline against the pinned LiteLLM |
+| Budget caveat | Deployment spend is counted in the proxy's memory (no Redis here): a proxy restart restarts the month's count. The DeepSeek account's prepaid balance is the hard ceiling |
+| Isolation | Egress only to LiteLLM and DNS (web and browser tools stay dark), ingress only from the host, where `tailscale serve` proxies the tailnet to a fixed ClusterIP; nothing on the LAN. Kyverno lets each pod read only `hermes-<its ai.user>` |
+| Why `baseline` | The official image starts as root under s6-overlay (`/init` chowns the data volume), then runs Hermes as uid 10000. The pod drops every capability except the seven that needs, with no privilege escalation |
+| Keys | The virtual key is `OPENAI_API_KEY` in the pod, a name Hermes keeps out of its tools' subprocesses; `config.yaml` holds only the `${OPENAI_API_KEY}` template |
+
+```bash
+WITH_PROVIDERS=1 DEEPSEEK_API_KEY=... WITH_HERMES=1 make seal-secrets   # commit secrets/sealed/
+make hermes-configure      # model.provider custom → LiteLLM, model.default chat-<user>
+make hermes-serve          # tailscale serve --https=9443 / 9444 on the box
+make hermes-status
+HERMES=1 make verify-ai-netpol
+```
+
+In Hermex: add a server `https://homelab.<tailnet>.ts.net:9443` (teodora: `:9444`)
+and sign in with **Username & password** from
+`~/.config/secure-ai-gateway/hermes-<user>.env`. The second person needs the
+tailnet on her phone (invite her, or share the `homelab` node with her); a
+Tailscale ACL can limit her to port 9444.
 
 ## Secrets
 
@@ -201,7 +247,7 @@ secure-ai-gateway/
 │   └── secure-k8s-lab/
 │       ├── secure-ai-gateway.yaml          # the one Application added to secure-k8s-lab
 │       └── secure-ai-gateway-homelab.yaml  # its homelab variant (gitops/ + gitops-homelab/)
-├── gitops-homelab/              # homelab overrides: ai-models + litellm (bigger model)
+├── gitops-homelab/              # homelab: ai-models, ai-gateway, litellm overrides + ai-hermes
 ├── gitops/                      # child ArgoCD Applications
 │   ├── sealed-secrets.yaml      # controller in kube-system (wave -1)
 │   ├── ai-gateway.yaml          # one per zone (wave 0)
@@ -215,14 +261,15 @@ secure-ai-gateway/
 │   ├── ai-gateway/
 │   ├── ai-models/
 │   ├── ai-observability/
-│   └── ai-agents/
+│   ├── ai-agents/
+│   └── ai-hermes/               # homelab: one Hermes Agent per family member
 ├── values/                      # our values for upstream charts (Sealed Secrets, LiteLLM, Phoenix)
 ├── images/                      # Dockerfiles for the MCP server, agent, Ollama+model
 ├── secrets/                     # public sealing cert + SealedSecrets (ciphertext only)
 ├── policies/kyverno/            # AI-specific guardrails (Audit) + kyverno tests
 ├── scripts/                     # lint.sh (same gate locally and in CI), seal-secrets.sh,
-│                                # gateway-test.sh, verify-ai-netpol.sh
-├── .github/workflows/           # CI: helm lint + kubeconform, gitleaks, kyverno test, Trivy, markdownlint
+│                                # gateway-test.sh, verify-ai-netpol.sh, check-budget-fallback.py
+├── .github/workflows/           # CI: helm lint + kubeconform, gitleaks, kyverno test, budget fallback, Trivy, markdownlint
 └── docs/
     ├── architecture.md          # design decisions and trade-offs
     └── falco/                   # AI-agent rules for runtime-security's Falco

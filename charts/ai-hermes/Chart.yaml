@@ -1,0 +1,14 @@
+apiVersion: v2
+name: ai-hermes
+description: |
+  Family chat zone (homelab): one Hermes Agent per person, each with its own
+  history volume and LiteLLM virtual key. Can reach the gateway, nothing else.
+  Ships its own namespace (Pod Security labels) and default-deny NetworkPolicy.
+type: application
+version: 0.1.0
+keywords:
+  - llmops
+  - ai-platform
+  - network-policy
+maintainers:
+  - name: teodorio95

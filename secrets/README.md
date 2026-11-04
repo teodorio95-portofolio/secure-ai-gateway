@@ -31,7 +31,9 @@ flowchart LR
 | `litellm-postgres` | ai-gateway | `username`, `password` | our Postgres + LiteLLM `db.useExisting` |
 | `agent-virtual-key` | ai-gateway **and** ai-agents | `api-key` | bootstrap Job registers it; the demo agent presents it |
 | `phoenix-secret` | ai-observability | `PHOENIX_SECRET`, `PHOENIX_ADMIN_SECRET`, … | Arize Phoenix auth (phase 4) |
-| `llm-provider-keys` | ai-gateway | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | **optional**; without it paid aliases fall back to the local model |
+| `llm-provider-keys` | ai-gateway | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` | **optional**; without it paid aliases fall back to the local model |
+| `family-virtual-keys` | ai-gateway | `teodor`, `teodora` | homelab only (`WITH_HERMES=1`); the bootstrap Job registers each person's LiteLLM key |
+| `hermes-<user>` | ai-hermes | `OPENAI_API_KEY` (that person's virtual key), `HERMES_DASHBOARD_BASIC_AUTH_*` | homelab only; one per person's Hermes. The dashboard login is also in `~/.config/secure-ai-gateway/hermes-<user>.env` for the Hermex app |
 
 The agent key is one value sealed twice, once per namespace, so neither side
 needs RBAC to read the other namespace's Secrets.

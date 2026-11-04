@@ -21,8 +21,8 @@ spec:
         failureAction: Audit
         message: >-
           Images in ai-* namespaces must come from ghcr.io/berriai,
-          docker.io/arizephoenix, the official postgres image, curlimages/curl
-          or localhost/secure-ai-gateway.
+          docker.io/arizephoenix, the official postgres image, curlimages/curl,
+          docker.io/nousresearch/hermes-agent or localhost/secure-ai-gateway.
         foreach:
           - list: "request.object.spec.[containers, initContainers][]"
             deny:
@@ -36,4 +36,6 @@ spec:
                       - "postgres:*"
                       - "docker.io/library/postgres:*"
                       - "curlimages/curl:*"
+                      # Official Hermes Agent image (ai-hermes, homelab), digest-pinned.
+                      - "docker.io/nousresearch/hermes-agent:*"
                       - "localhost/secure-ai-gateway/*"

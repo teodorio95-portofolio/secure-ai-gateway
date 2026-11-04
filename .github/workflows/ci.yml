@@ -67,6 +67,15 @@ jobs:
           sudo tar -xzf "$tarball" -C /usr/local/bin kyverno
       - run: kyverno test policies/kyverno/tests
 
+  budget-fallback:
+    name: budget fallback (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Same LiteLLM as values/litellm.yaml's image tag; mocked answers, no keys.
+      - run: python3 -m pip install --quiet "litellm==1.106.2" "pyyaml==6.0.2"
+      - run: python3 scripts/check-budget-fallback.py
+
   trivy:
     name: trivy config
     runs-on: ubuntu-latest

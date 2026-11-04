@@ -1,5 +1,6 @@
 # Bootstrap for the gateway, rendered through the upstream chart's
-# extraResources: teams with budgets/limits, and the demo agent's virtual key.
+# extraResources: teams with budgets/limits, and the virtual keys (the demo
+# agent's, plus the family's Hermes keys on the homelab).
 # Separate file from values/litellm.yaml only for readability; both are
 # valueFiles of gitops/litellm.yaml.
 #
@@ -24,17 +25,30 @@ extraResources:
           {"team_alias": "team-support", "max_budget": 1.0, "budget_duration": "30d",
            "tpm_limit": 5000, "rpm_limit": 10, "models": ["cheap", "local"]}
         ]
-      # -- The demo agent's key: which team it belongs to and what it may call.
-      agent.json: |
-        {"key_alias": "demo-agent", "team_alias": "team-support",
-         "models": ["cheap", "local"], "max_budget": 0.5, "rpm_limit": 10}
+      # -- Virtual keys: `secret_env` names the Job env var holding the key's
+      # value (from a SealedSecret); a key whose Secret is absent is skipped, so
+      # the lab registers only the demo agent. `team_alias` is optional.
+      # teodor / teodora (homelab, Hermes in ai-hermes): their own DeepSeek
+      # alias + `local` only. Their $5/month DeepSeek budget is on the alias
+      # (values/litellm-homelab.yaml) so it falls back to `local` when spent;
+      # max_budget here is only a runaway ceiling that counts `local` too.
+      keys.json: |
+        [
+          {"key_alias": "demo-agent", "team_alias": "team-support", "secret_env": "AGENT_KEY",
+           "models": ["cheap", "local"], "max_budget": 0.5, "rpm_limit": 10},
+          {"key_alias": "teodor", "secret_env": "TEODOR_KEY",
+           "models": ["chat-teodor", "local"], "max_budget": 15.0, "budget_duration": "30d",
+           "rpm_limit": 30},
+          {"key_alias": "teodora", "secret_env": "TEODORA_KEY",
+           "models": ["chat-teodora", "local"], "max_budget": 15.0, "budget_duration": "30d",
+           "rpm_limit": 30}
+        ]
       bootstrap.py: |
-        """Create the gateway's teams and register the agent's virtual key."""
+        """Create the gateway's teams and register the virtual keys."""
         import json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
         BASE = os.environ["LITELLM_URL"]
         MASTER = os.environ["LITELLM_MASTER_KEY"]
-        AGENT_KEY = os.environ["AGENT_KEY"]
         CONF = "/bootstrap"
 
         def call(method, path, body=None, ok=(200,)):
@@ -71,16 +85,22 @@ extraResources:
                 teams[alias] = call("POST", "/team/new", team)[1]["team_id"]
                 print(f"team {alias}: created")
 
-        agent = json.load(open(f"{CONF}/agent.json"))
-        team_id = teams[agent.pop("team_alias")]
-        q = urllib.parse.urlencode({"key": AGENT_KEY})
-        status, _ = call("GET", f"/key/info?{q}", ok=(200, 400, 404))
-        if status == 200:
-            call("POST", "/key/update", {"key": AGENT_KEY, "team_id": team_id, **agent})
-            print(f"key {agent['key_alias']}: exists, limits updated")
-        else:
-            call("POST", "/key/generate", {"key": AGENT_KEY, "team_id": team_id, **agent})
-            print(f"key {agent['key_alias']}: registered on its team")
+        for spec in json.load(open(f"{CONF}/keys.json")):
+            value = os.environ.get(spec.pop("secret_env"), "")
+            alias = spec["key_alias"]
+            if not value:
+                print(f"key {alias}: no Secret here, skipped")
+                continue
+            if "team_alias" in spec:
+                spec["team_id"] = teams[spec.pop("team_alias")]
+            q = urllib.parse.urlencode({"key": value})
+            status, _ = call("GET", f"/key/info?{q}", ok=(200, 400, 404))
+            if status == 200:
+                call("POST", "/key/update", {"key": value, **spec})
+                print(f"key {alias}: exists, limits updated")
+            else:
+                call("POST", "/key/generate", {"key": value, **spec})
+                print(f"key {alias}: registered")
   - apiVersion: batch/v1
     kind: Job
     metadata:
@@ -127,6 +147,19 @@ extraResources:
                     secretKeyRef:
                       name: agent-virtual-key
                       key: api-key
+                # Homelab only (WITH_HERMES=1 make seal-secrets); absent in the lab.
+                - name: TEODOR_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: family-virtual-keys
+                      key: teodor
+                      optional: true
+                - name: TEODORA_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: family-virtual-keys
+                      key: teodora
+                      optional: true
               securityContext:
                 runAsNonRoot: true
                 allowPrivilegeEscalation: false

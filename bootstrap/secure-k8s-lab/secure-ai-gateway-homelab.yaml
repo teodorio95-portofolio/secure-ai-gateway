@@ -1,7 +1,8 @@
 # Homelab variant of secure-ai-gateway.yaml (used by secure-k8s-lab's
 # bootstrap/argocd/root-app-homelab.yaml). Same cross-repo app-of-apps, but
-# from the secure-ai-gateway `homelab` branch: gitops/ minus the two
-# Applications that gitops-homelab/ overrides (local model + gateway config).
+# from the secure-ai-gateway `homelab` branch: gitops/ minus the Applications
+# that gitops-homelab/ overrides (local model, gateway zone + config), plus the
+# homelab-only ai-hermes zone.
 # Copied into secure-k8s-lab/apps/homelab/ by `make wire-lab-homelab`.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -21,7 +22,7 @@ spec:
       targetRevision: homelab
       path: gitops
       directory:
-        exclude: "{ai-models.yaml,litellm.yaml}"
+        exclude: "{ai-models.yaml,ai-gateway.yaml,litellm.yaml}"
     - repoURL: https://github.com/teodorio95-portofolio/secure-ai-gateway.git
       targetRevision: homelab
       path: gitops-homelab

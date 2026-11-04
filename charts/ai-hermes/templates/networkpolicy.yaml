@@ -1,0 +1,15 @@
+{{- if .Values.networkPolicy.enabled }}
+# Default-deny posture: nothing in/out of the namespace unless explicitly allowed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-hermes-default-deny-all
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "ai-hermes.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+{{- end }}

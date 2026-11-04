@@ -78,3 +78,56 @@ spec:
   containers:
     - name: model
       image: docker.io/someone/llm-server:1.0
+---
+# A family Hermes pod (homelab, ai-hermes) with its own Secret only.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hermes-own-secret
+  namespace: ai-hermes
+  labels:
+    ai.role: agent
+    ai.user: teodor
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - name: hermes
+      image: docker.io/nousresearch/hermes-agent:v0.22.7@sha256:e6d81ae52ebf6a43efa529701405509f20054ba818f179ddd748bed4f8af584c
+      envFrom:
+        - secretRef:
+            name: hermes-teodor
+---
+# One person's Hermes reaching for the other's key and dashboard login.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hermes-other-users-secret
+  namespace: ai-hermes
+  labels:
+    ai.role: agent
+    ai.user: teodor
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - name: hermes
+      image: docker.io/nousresearch/hermes-agent:v0.22.7@sha256:e6d81ae52ebf6a43efa529701405509f20054ba818f179ddd748bed4f8af584c
+      envFrom:
+        - secretRef:
+            name: hermes-teodora
+---
+# No ai.user label: a hermes-* Secret must not slip through as "hermes-".
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hermes-unlabelled
+  namespace: ai-hermes
+  labels:
+    ai.role: agent
+spec:
+  automountServiceAccountToken: false
+  containers:
+    - name: hermes
+      image: docker.io/nousresearch/hermes-agent:v0.22.7@sha256:e6d81ae52ebf6a43efa529701405509f20054ba818f179ddd748bed4f8af584c
+      envFrom:
+        - secretRef:
+            name: hermes-teodor

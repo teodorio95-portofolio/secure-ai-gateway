@@ -59,6 +59,13 @@ extraEnvVars:
         name: llm-provider-keys
         key: OPENAI_API_KEY
         optional: true
+  # Homelab only (values/litellm-homelab.yaml): the family's chat aliases.
+  - name: DEEPSEEK_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: llm-provider-keys
+        key: DEEPSEEK_API_KEY
+        optional: true
 
 podLabels:
   ai.role: gateway

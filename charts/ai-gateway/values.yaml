@@ -41,6 +41,9 @@ agents:
   # ai.role=agent in this namespace.
   namespace: ai-agents
   roleLabel: agent
+  # -- More agent namespaces whose ai.role=agent pods may call the gateway
+  # (homelab: ai-hermes, see values-homelab.yaml).
+  extraNamespaces: []
 
 postgres:
   # -- Run our own Postgres for LiteLLM (instead of the chart's bitnamilegacy subchart).
