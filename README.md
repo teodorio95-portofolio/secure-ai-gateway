@@ -135,13 +135,14 @@ flowchart LR
     end
     S1 -->|key teodor| L[LiteLLM]
     S2 -->|key teodora| L
-    L -->|chat-teodor / chat-teodora<br/>$5 per month each| D[api.deepseek.com]
-    L -->|budget spent or DeepSeek down| O[local qwen3.5:9b]
+    L -->|"chat-user: V4.1 Flash, $3<br/>chat-user-pro: V4 Pro, $2"| D[api.deepseek.com]
+    L -->|budgets spent or DeepSeek down| O[local qwen3.5:9b]
 ```
 
 | | |
 |---|---|
-| Budget | `chat-teodor` and `chat-teodora` are DeepSeek aliases with `max_budget: 5.0` / `30d` on the deployment. When one is spent, the router drops it and that person falls back to `local`; the other is untouched. A key or team budget would refuse the request instead, so the per-key `max_budget` (15) is only a runaway ceiling. `make check-budget-fallback` (and CI) proves it offline against the pinned LiteLLM |
+| Models | Per person `chat-<user>` = `deepseek/deepseek-flash` (V4.1 Flash, the default) and `chat-<user>-pro` = `deepseek/deepseek-v4-pro`. In Hermes: `/model pro`, `/model flash`, or `/model pro --once` for one question (`scripts/hermes-configure.sh` defines the aliases) |
+| Budget | $5 a person a month, on the deployments (`30d`): $3 flash, $2 pro, priced in the config at DeepSeek's peak rates (not LiteLLM's bundled map), so the count tracks the real bill and errs on the safe side off-peak. A spent alias is dropped by the router: pro falls back to flash, flash to `local`; the other person is untouched. A key or team budget would refuse the request instead, so the per-key `max_budget` (15) is only a runaway ceiling. `make check-budget-fallback` (and CI) proves it offline against the pinned LiteLLM |
 | Budget caveat | Deployment spend is counted in the proxy's memory (no Redis here): a proxy restart restarts the month's count. The DeepSeek account's prepaid balance is the hard ceiling |
 | Isolation | Egress only to LiteLLM and DNS (web and browser tools stay dark), ingress only from the host, where `tailscale serve` proxies the tailnet to a fixed ClusterIP; nothing on the LAN. Kyverno lets each pod read only `hermes-<its ai.user>` |
 | Why `baseline` | The official image starts as root under s6-overlay (`/init` chowns the data volume), then runs Hermes as uid 10000. The pod drops every capability except the seven that needs, with no privilege escalation |
@@ -167,8 +168,8 @@ Until the box arrives, [mac/compose.yaml](mac/compose.yaml) runs the same family
 chat in Colima's Docker, outside the k3d lab: Postgres, LiteLLM and both Hermes
 instances. LiteLLM's aliases, budgets and key bootstrap are rendered from the
 same `values/litellm*.yaml` ([mac/render.py](mac/render.py)). The Mac has no
-local model, so a spent $5 budget answers with an error there instead of falling
-back.
+local model, so once both of a person's budgets are spent the reply is an error
+there instead of `local` (pro still falls back to flash).
 
 The cage matches the cluster's. Hermes sits on a Docker network with no route
 out and reaches only LiteLLM; an nginx TCP proxy publishes the two dashboards on
@@ -179,7 +180,7 @@ make mac-secrets     # mac/.env (0600, git-ignored); prompts for the DeepSeek ke
 make mac-up          # first start pulls ~1 GB per Hermes image
 make mac-configure   # each Hermes → LiteLLM, model chat-<user>
 make mac-serve       # https://<mac>.<tailnet>.ts.net:9443 (teodor), :9444 (teodora)
-make mac-test        # each key reaches only its own alias (one real call each)
+make mac-test        # each key reaches only its own aliases (flash + pro, one real call each)
 make mac-logins      # what to type into Hermex
 make mac-down        # WIPE=1 also deletes chat history, keys and spend
 ```

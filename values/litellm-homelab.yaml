@@ -3,7 +3,7 @@
 #
 # Helm replaces lists wholesale, so model_list and router_settings.fallbacks are
 # repeated in full. Differences from values/litellm.yaml: the `local` entry (the
-# homelab's bigger model) and one DeepSeek alias per family member. Keep the paid
+# homelab's bigger model) and two DeepSeek aliases per family member. Keep the paid
 # entries in sync with that file.
 proxy_config:
   model_list:
@@ -17,28 +17,55 @@ proxy_config:
       litellm_params:
         model: openai/gpt-6-luna
         api_key: os.environ/OPENAI_API_KEY
-    # -- One DeepSeek alias per person, each with its own monthly budget. The
-    # budget sits on the deployment, not on the key: once it is spent the router
-    # drops the deployment and the request falls back to `local` (a key or team
-    # budget would refuse the request instead). Their virtual keys only allow
-    # their own alias + `local` (values/litellm-bootstrap.yaml, keys.json), and
-    # Hermes in ai-hermes asks for it (charts/ai-hermes).
+    # -- Two DeepSeek aliases per person: chat-<user> (V4.1 Flash, the default)
+    # and chat-<user>-pro (V4 Pro, `/model pro` in Hermes). Each has its own
+    # monthly budget on the deployment, together $5 a person: once one is spent
+    # the router drops it and the request falls back (pro -> flash -> local; a
+    # key or team budget would refuse the request instead). Their virtual keys
+    # only allow their own aliases + `local` (values/litellm-bootstrap.yaml).
+    # Costs are set here at DeepSeek's peak prices (api-docs.deepseek.com,
+    # 2026-11), not taken from LiteLLM's bundled map, so the budget tracks the
+    # real bill; off-peak hours cost half, so the budget errs on the safe side.
     # Caveat: deployment spend is counted in the proxy's memory (no Redis here),
     # so a proxy restart restarts the month's count; the DeepSeek account's
     # prepaid balance is the hard ceiling. scripts/check-budget-fallback.py
-    # proves the fallback offline against the pinned LiteLLM.
+    # proves the fallbacks offline against the pinned LiteLLM.
     - model_name: chat-teodor
       litellm_params:
-        model: deepseek/deepseek-chat
+        model: deepseek/deepseek-flash
         api_key: os.environ/DEEPSEEK_API_KEY
-        max_budget: 5.0
+        max_budget: 3.0
         budget_duration: 30d
+        input_cost_per_token: 0.0000003
+        output_cost_per_token: 0.0000012
+        cache_read_input_token_cost: 0.000000006
+    - model_name: chat-teodor-pro
+      litellm_params:
+        model: deepseek/deepseek-v4-pro
+        api_key: os.environ/DEEPSEEK_API_KEY
+        max_budget: 2.0
+        budget_duration: 30d
+        input_cost_per_token: 0.00000132
+        output_cost_per_token: 0.00000396
+        cache_read_input_token_cost: 0.000000044
     - model_name: chat-teodora
       litellm_params:
-        model: deepseek/deepseek-chat
+        model: deepseek/deepseek-flash
         api_key: os.environ/DEEPSEEK_API_KEY
-        max_budget: 5.0
+        max_budget: 3.0
         budget_duration: 30d
+        input_cost_per_token: 0.0000003
+        output_cost_per_token: 0.0000012
+        cache_read_input_token_cost: 0.000000006
+    - model_name: chat-teodora-pro
+      litellm_params:
+        model: deepseek/deepseek-v4-pro
+        api_key: os.environ/DEEPSEEK_API_KEY
+        max_budget: 2.0
+        budget_duration: 30d
+        input_cost_per_token: 0.00000132
+        output_cost_per_token: 0.00000396
+        cache_read_input_token_cost: 0.000000044
     # -- In-cluster model on the homelab (see charts/ai-models/values-homelab.yaml).
     - model_name: local
       litellm_params:
@@ -53,4 +80,6 @@ proxy_config:
       - default: [cheap, local]
       - cheap: [local]
       - chat-teodor: [local]
+      - chat-teodor-pro: [chat-teodor, local]
       - chat-teodora: [local]
+      - chat-teodora-pro: [chat-teodora, local]

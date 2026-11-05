@@ -134,14 +134,10 @@ gateway-bootstrap: ## Re-run the bootstrap Job (teams + agent key) without waiti
 verify-ai-netpol: ## Prove the AI network cage with labelled curl pods → PASS/FAIL per path
 	./scripts/verify-ai-netpol.sh
 
-hermes-configure: ## (homelab) Point each family Hermes at its LiteLLM alias, then restart it
+hermes-configure: ## (homelab) Point each family Hermes at its LiteLLM aliases (flash default, `/model pro`), restart it
 	@for u in $(HERMES_USERS); do \
 		echo "==> hermes-$$u"; \
-		kubectl -n ai-hermes exec deploy/hermes-$$u -- sh -c \
-			'hermes config set model.provider custom \
-			&& hermes config set model.base_url "$$LITELLM_BASE_URL" \
-			&& hermes config set model.default "$$LITELLM_MODEL" \
-			&& hermes config set model.api_key "\$${OPENAI_API_KEY}"' \
+		kubectl -n ai-hermes exec -i deploy/hermes-$$u -- sh -s < scripts/hermes-configure.sh \
 		&& kubectl -n ai-hermes rollout restart deploy/hermes-$$u; \
 	done
 
@@ -171,14 +167,10 @@ mac-up: mac-render ## (Mac) Start LiteLLM + Postgres + both Hermes in Colima (ne
 	$(MAC_COMPOSE) up -d
 	@echo "==> first start pulls ~1 GB per Hermes image; then: make mac-configure mac-serve mac-test"
 
-mac-configure: ## (Mac) Point each Hermes at its LiteLLM alias, then restart it
+mac-configure: ## (Mac) Point each Hermes at its LiteLLM aliases (flash default, `/model pro`), restart it
 	@for u in $(HERMES_USERS); do \
 		echo "==> hermes-$$u"; \
-		$(MAC_COMPOSE) exec hermes-$$u sh -c \
-			'hermes config set model.provider custom \
-			&& hermes config set model.base_url "$$LITELLM_BASE_URL" \
-			&& hermes config set model.default "$$LITELLM_MODEL" \
-			&& hermes config set model.api_key "\$${OPENAI_API_KEY}"' \
+		$(MAC_COMPOSE) exec -T hermes-$$u sh -s < scripts/hermes-configure.sh \
 		&& $(MAC_COMPOSE) restart hermes-$$u; \
 	done
 

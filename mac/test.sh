@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # End-to-end checks of the Mac stack through LiteLLM on 127.0.0.1:14000, with the
-# keys from mac/.env (never printed). One real DeepSeek call per person: a few
-# hundredths of a cent.
-#   own key  -> own alias      200 (DeepSeek answers)
-#   own key  -> other's alias  refused (each key only allows its own alias)
+# keys from mac/.env (never printed). Two real DeepSeek calls per person (flash
+# and pro, 5 tokens each): a fraction of a cent.
+#   own key  -> own aliases     200 (DeepSeek answers)
+#   own key  -> other's aliases refused (each key only allows its own)
 #   no key                     refused
 set -uo pipefail
 
@@ -34,9 +34,12 @@ check() {
   printf "%s  %-40s expected %-8s got %s\n" "$verdict" "$1" "$3" "$got"
 }
 
-check "teodor  -> chat-teodor"  "$(status "$TEODOR_KEY" chat-teodor)" 200
-check "teodora -> chat-teodora" "$(status "$TEODORA_KEY" chat-teodora)" 200
-check "teodor  -> chat-teodora" "$(status "$TEODOR_KEY" chat-teodora)" refused
-check "teodora -> chat-teodor"  "$(status "$TEODORA_KEY" chat-teodor)" refused
+check "teodor  -> chat-teodor"      "$(status "$TEODOR_KEY" chat-teodor)" 200
+check "teodor  -> chat-teodor-pro"  "$(status "$TEODOR_KEY" chat-teodor-pro)" 200
+check "teodora -> chat-teodora"     "$(status "$TEODORA_KEY" chat-teodora)" 200
+check "teodora -> chat-teodora-pro" "$(status "$TEODORA_KEY" chat-teodora-pro)" 200
+check "teodor  -> chat-teodora"     "$(status "$TEODOR_KEY" chat-teodora)" refused
+check "teodor  -> chat-teodora-pro" "$(status "$TEODOR_KEY" chat-teodora-pro)" refused
+check "teodora -> chat-teodor-pro"  "$(status "$TEODORA_KEY" chat-teodor-pro)" refused
 check "no key  -> chat-teodor"  "$(status "" chat-teodor)" refused
 exit "$FAILED"

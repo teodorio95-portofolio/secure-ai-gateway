@@ -29,18 +29,18 @@ extraResources:
       # value (from a SealedSecret); a key whose Secret is absent is skipped, so
       # the lab registers only the demo agent. `team_alias` is optional.
       # teodor / teodora (homelab, Hermes in ai-hermes): their own DeepSeek
-      # alias + `local` only. Their $5/month DeepSeek budget is on the alias
-      # (values/litellm-homelab.yaml) so it falls back to `local` when spent;
+      # aliases (flash + pro) + `local` only. Their $5/month DeepSeek budget is
+      # on the aliases (values/litellm-homelab.yaml) so it falls back when spent;
       # max_budget here is only a runaway ceiling that counts `local` too.
       keys.json: |
         [
           {"key_alias": "demo-agent", "team_alias": "team-support", "secret_env": "AGENT_KEY",
            "models": ["cheap", "local"], "max_budget": 0.5, "rpm_limit": 10},
           {"key_alias": "teodor", "secret_env": "TEODOR_KEY",
-           "models": ["chat-teodor", "local"], "max_budget": 15.0, "budget_duration": "30d",
+           "models": ["chat-teodor", "chat-teodor-pro", "local"], "max_budget": 15.0, "budget_duration": "30d",
            "rpm_limit": 30},
           {"key_alias": "teodora", "secret_env": "TEODORA_KEY",
-           "models": ["chat-teodora", "local"], "max_budget": 15.0, "budget_duration": "30d",
+           "models": ["chat-teodora", "chat-teodora-pro", "local"], "max_budget": 15.0, "budget_duration": "30d",
            "rpm_limit": 30}
         ]
       bootstrap.py: |
