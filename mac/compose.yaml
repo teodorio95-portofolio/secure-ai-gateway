@@ -70,6 +70,10 @@ services:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
     volumes:
       - ./.generated/litellm-config.yaml:/app/config.yaml:ro
+    # A changed mounted file alone does not recreate a container: `make mac-up`
+    # passes the rendered config's checksum, so a new config means a new proxy.
+    labels:
+      family-chat.config-checksum: ${LITELLM_CONFIG_SUM:-unset}
     networks: [internal, egress]
     # Admin UI and `make mac-test`, from this Mac only.
     ports:
@@ -95,6 +99,10 @@ services:
       TEODORA_KEY: ${TEODORA_KEY:?run make mac-secrets}
     volumes:
       - ./.generated/bootstrap:/bootstrap:ro
+    # Re-registers the keys whenever keys.json or the proxy config changes.
+    labels:
+      family-chat.config-checksum: ${LITELLM_CONFIG_SUM:-unset}
+      family-chat.keys-checksum: ${LITELLM_KEYS_SUM:-unset}
     networks: [internal]
     depends_on:
       litellm:

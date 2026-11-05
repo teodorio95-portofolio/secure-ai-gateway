@@ -162,9 +162,12 @@ mac-secrets: ## (Mac) Generate mac/.env once: keys, logins, DeepSeek key (prompt
 mac-render: ## (Mac) Render LiteLLM config + key bootstrap from values/litellm*.yaml into mac/.generated/
 	uv run --no-project --with pyyaml==6.0.2 python mac/render.py
 
-mac-up: mac-render ## (Mac) Start LiteLLM + Postgres + both Hermes in Colima (needs mac/.env)
+mac-up: mac-render ## (Mac) Start or update LiteLLM + Postgres + both Hermes in Colima (needs mac/.env)
 	@test -f mac/.env || { echo "no mac/.env - run make mac-secrets first"; exit 1; }
-	$(MAC_COMPOSE) up -d
+	LITELLM_CONFIG_SUM=$$(cksum < mac/.generated/litellm-config.yaml | cut -d' ' -f1) \
+	LITELLM_KEYS_SUM=$$(cksum < mac/.generated/bootstrap/keys.json | cut -d' ' -f1) \
+		$(MAC_COMPOSE) up -d
+	@echo "==> a changed config recreates LiteLLM (its budget count restarts) and re-registers the keys"
 	@echo "==> first start pulls ~1 GB per Hermes image; then: make mac-configure mac-serve mac-test"
 
 mac-configure: ## (Mac) Point each Hermes at its LiteLLM aliases (flash default, `/model pro`), restart it
