@@ -141,7 +141,7 @@ flowchart LR
 
 | | |
 |---|---|
-| Models | Per person `chat-<user>` = `deepseek/deepseek-flash` (V4.1 Flash, the default) and `chat-<user>-pro` = `deepseek/deepseek-v4-pro`. In Hermes: `/model pro`, `/model flash`, or `/model pro --once` for one question (`scripts/hermes-configure.sh` defines the aliases) |
+| Models | Per person `chat-<user>` = `deepseek/deepseek-flash` (V4.1 Flash, the default, thinking off for fast replies) and `chat-<user>-pro` = `deepseek/deepseek-v4-pro` (thinking on). In Hermes: `/model pro`, `/model flash`, or `/model pro --once` for one question (`scripts/hermes-configure.sh` defines the aliases) |
 | Budget | $5 a person a month, on the deployments (`30d`): $3 flash, $2 pro, priced in the config at DeepSeek's peak rates (not LiteLLM's bundled map), so the count tracks the real bill and errs on the safe side off-peak. A spent alias is dropped by the router: pro falls back to flash, flash to `local`; the other person is untouched. A key or team budget would refuse the request instead, so the per-key `max_budget` (15) is only a runaway ceiling. `make check-budget-fallback` (and CI) proves it offline against the pinned LiteLLM |
 | Budget caveat | Deployment spend is counted in the proxy's memory (no Redis here): a proxy restart restarts the month's count. The DeepSeek account's prepaid balance is the hard ceiling |
 | Isolation | Egress only to LiteLLM and DNS (web and browser tools stay dark), ingress only from the host, where `tailscale serve` proxies the tailnet to a fixed ClusterIP; nothing on the LAN. Kyverno lets each pod read only `hermes-<its ai.user>` |

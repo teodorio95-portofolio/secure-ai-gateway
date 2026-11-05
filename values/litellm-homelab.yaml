@@ -17,8 +17,8 @@ proxy_config:
       litellm_params:
         model: openai/gpt-6-luna
         api_key: os.environ/OPENAI_API_KEY
-    # -- Two DeepSeek aliases per person: chat-<user> (V4.1 Flash, the default)
-    # and chat-<user>-pro (V4 Pro, `/model pro` in Hermes). Each has its own
+    # -- Two DeepSeek aliases per person: chat-<user> (V4.1 Flash, the default,
+    # thinking off) and chat-<user>-pro (V4 Pro with thinking, `/model pro` in Hermes). Each has its own
     # monthly budget on the deployment, together $5 a person: once one is spent
     # the router drops it and the request falls back (pro -> flash -> local; a
     # key or team budget would refuse the request instead). Their virtual keys
@@ -33,6 +33,10 @@ proxy_config:
     - model_name: chat-teodor
       litellm_params:
         model: deepseek/deepseek-flash
+        # Flash answers straight away: thinking off (DeepSeek's default is on).
+        # Only an explicit `reasoning_effort` from a client turns it back on.
+        thinking:
+          type: disabled
         api_key: os.environ/DEEPSEEK_API_KEY
         max_budget: 3.0
         budget_duration: 30d
@@ -51,6 +55,10 @@ proxy_config:
     - model_name: chat-teodora
       litellm_params:
         model: deepseek/deepseek-flash
+        # Flash answers straight away: thinking off (DeepSeek's default is on).
+        # Only an explicit `reasoning_effort` from a client turns it back on.
+        thinking:
+          type: disabled
         api_key: os.environ/DEEPSEEK_API_KEY
         max_budget: 3.0
         budget_duration: 30d
