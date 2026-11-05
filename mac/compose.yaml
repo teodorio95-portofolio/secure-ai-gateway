@@ -1,0 +1,147 @@
+# Family chat on the Mac, until the homelab box arrives: the same pieces as
+# charts/ai-hermes + the gateway, in Colima's Docker instead of k3s.
+#
+#   Hermex (iPhone) --tailnet--> tailscale serve (Mac) --> 127.0.0.1:1911x
+#     --> edge (nginx, TCP) --> hermes-<user> --> litellm --> api.deepseek.com
+#
+# The cage mirrors the cluster's: Hermes sits on `internal` only (a Docker
+# network with no route out), so it can reach LiteLLM and nothing else;
+# LiteLLM alone also joins `egress`. Ports are published on 127.0.0.1 only.
+# LiteLLM's config and key bootstrap are rendered from values/litellm*.yaml
+# (mac/render.py), so budgets and aliases match the homelab.
+#
+#   make mac-up | mac-configure | mac-serve | mac-logins | mac-test | mac-down
+name: family-chat
+
+networks:
+  internal:
+    internal: true
+  egress: {}
+  edge: {}
+
+volumes:
+  postgres: {}
+  # Named volumes, not bind mounts: Hermes keeps sessions in SQLite (WAL),
+  # which virtiofs bind mounts from macOS can corrupt.
+  hermes-teodor: {}
+  hermes-teodora: {}
+
+x-hermes: &hermes
+  # Same digest-pinned image as charts/ai-hermes/values.yaml (multi-arch).
+  image: docker.io/nousresearch/hermes-agent:v0.22.7@sha256:e6d81ae52ebf6a43efa529701405509f20054ba818f179ddd748bed4f8af584c
+  # /init (s6-overlay) supervises the gateway and, with HERMES_DASHBOARD=1, the dashboard.
+  command: ["gateway", "run"]
+  restart: unless-stopped
+  networks: [internal]
+  # Root only for /init's chown + privilege drop, as in the chart.
+  cap_drop: [ALL]
+  cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, FSETID, KILL, SETGID, SETUID]
+  security_opt: ["no-new-privileges:true"]
+  mem_limit: 2g
+  depends_on:
+    bootstrap:
+      condition: service_completed_successfully
+
+services:
+  postgres:
+    image: postgres:18.6-alpine3.24@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make mac-secrets}
+      POSTGRES_DB: litellm
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      retries: 20
+
+  litellm:
+    image: ghcr.io/berriai/litellm-non_root:v1.106.2@sha256:07fabea33dfc2b127e865c03112dfc76936334b29028ec05cdd355af2385dc04
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "1"]
+    environment:
+      DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD}@postgres:5432/litellm
+      PROXY_MASTER_KEY: ${PROXY_MASTER_KEY:?run make mac-secrets}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?run make mac-secrets}
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+    volumes:
+      - ./.generated/litellm-config.yaml:/app/config.yaml:ro
+    networks: [internal, egress]
+    # Admin UI and `make mac-test`, from this Mac only.
+    ports:
+      - "127.0.0.1:14000:4000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=5)"]
+      interval: 10s
+      start_period: 60s
+      retries: 30
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Registers teodor's and teodora's virtual keys (the cluster's bootstrap Job).
+  bootstrap:
+    image: ghcr.io/berriai/litellm-non_root:v1.106.2@sha256:07fabea33dfc2b127e865c03112dfc76936334b29028ec05cdd355af2385dc04
+    entrypoint: ["python", "/bootstrap/bootstrap.py"]
+    restart: "no"
+    environment:
+      LITELLM_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${PROXY_MASTER_KEY}
+      TEODOR_KEY: ${TEODOR_KEY:?run make mac-secrets}
+      TEODORA_KEY: ${TEODORA_KEY:?run make mac-secrets}
+    volumes:
+      - ./.generated/bootstrap:/bootstrap:ro
+    networks: [internal]
+    depends_on:
+      litellm:
+        condition: service_healthy
+
+  hermes-teodor:
+    <<: *hermes
+    environment:
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_HOST: 0.0.0.0
+      HERMES_DASHBOARD_PORT: "9119"
+      HERMES_DASHBOARD_PUBLIC_URL: ${HERMES_TEODOR_URL:-http://127.0.0.1:19119}
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: teodor
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: ${HERMES_TEODOR_PASSWORD:?run make mac-secrets}
+      HERMES_DASHBOARD_BASIC_AUTH_SECRET: ${HERMES_TEODOR_SECRET:?run make mac-secrets}
+      # The virtual key under a name Hermes keeps out of its tools' subprocesses.
+      OPENAI_API_KEY: ${TEODOR_KEY}
+      LITELLM_BASE_URL: http://litellm:4000/v1
+      LITELLM_MODEL: chat-teodor
+    volumes:
+      - hermes-teodor:/opt/data
+
+  hermes-teodora:
+    <<: *hermes
+    environment:
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_HOST: 0.0.0.0
+      HERMES_DASHBOARD_PORT: "9119"
+      HERMES_DASHBOARD_PUBLIC_URL: ${HERMES_TEODORA_URL:-http://127.0.0.1:19120}
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: teodora
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: ${HERMES_TEODORA_PASSWORD:?run make mac-secrets}
+      HERMES_DASHBOARD_BASIC_AUTH_SECRET: ${HERMES_TEODORA_SECRET:?run make mac-secrets}
+      OPENAI_API_KEY: ${TEODORA_KEY}
+      LITELLM_BASE_URL: http://litellm:4000/v1
+      LITELLM_MODEL: chat-teodora
+    volumes:
+      - hermes-teodora:/opt/data
+
+  # The only way in: plain TCP from 127.0.0.1 to each dashboard (Hermes has no
+  # published port of its own, its network has no route out).
+  edge:
+    image: nginx:1.29.3-alpine@sha256:b3c656d55d7ad751196f21b7fd2e8d4da9cb430e32f646adcf92441b72f82b14
+    restart: unless-stopped
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks: [internal, edge]
+    ports:
+      - "127.0.0.1:19119:19119"
+      - "127.0.0.1:19120:19120"
+    depends_on: [hermes-teodor, hermes-teodora]

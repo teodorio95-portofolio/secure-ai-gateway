@@ -4,3 +4,6 @@ kubeconfig*
 *.tmp
 # Sealing private keys live in ~/.config/secure-ai-gateway, never in the repo.
 *.key
+# Mac test stack (mac/): secrets and files rendered from values/.
+mac/.env
+mac/.generated/

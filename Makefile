@@ -24,11 +24,15 @@ HOMELAB_OLLAMA_IMAGE := localhost/secure-ai-gateway/ollama:0.40.8-$(subst :,-,$(
 HERMES_SERVE ?= teodor:9443:10.43.219.19 teodora:9444:10.43.219.20
 HERMES_USERS := $(foreach s,$(HERMES_SERVE),$(word 1,$(subst :, ,$(s))))
 LITELLM_PIN  := 1.106.2
+# Mac test stack (mac/compose.yaml): the same family chat in Colima's Docker.
+MAC_COMPOSE := docker compose -f mac/compose.yaml --project-directory mac --env-file mac/.env
+TAILSCALE   ?= $(shell command -v tailscale 2>/dev/null || echo /Applications/Tailscale.app/Contents/MacOS/Tailscale)
 
 .PHONY: help wire-lab apps-status verify-namespaces sealing-key sealing-key-install \
 	seal-secrets verify-secrets build-images gateway-ui gateway-test gateway-bootstrap traces-ui \
 	agent-ask verify-ai-netpol kyverno-test lint secrets-scan wire-lab-homelab homelab-images \
-	hermes-configure hermes-serve hermes-status check-budget-fallback
+	hermes-configure hermes-serve hermes-status check-budget-fallback \
+	mac-secrets mac-render mac-up mac-configure mac-serve mac-logins mac-test mac-status mac-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -155,6 +159,49 @@ hermes-status: ## (homelab) Hermes pods, their volumes and what tailscale serve 
 
 check-budget-fallback: ## Offline: prove a spent per-person DeepSeek budget falls back to `local` (pinned LiteLLM)
 	uv run --no-project --with litellm==$(LITELLM_PIN) python scripts/check-budget-fallback.py
+
+mac-secrets: ## (Mac) Generate mac/.env once: keys, logins, DeepSeek key (prompted, hidden)
+	TAILSCALE="$(TAILSCALE)" ./mac/secrets.sh
+
+mac-render: ## (Mac) Render LiteLLM config + key bootstrap from values/litellm*.yaml into mac/.generated/
+	uv run --no-project --with pyyaml==6.0.2 python mac/render.py
+
+mac-up: mac-render ## (Mac) Start LiteLLM + Postgres + both Hermes in Colima (needs mac/.env)
+	@test -f mac/.env || { echo "no mac/.env - run make mac-secrets first"; exit 1; }
+	$(MAC_COMPOSE) up -d
+	@echo "==> first start pulls ~1 GB per Hermes image; then: make mac-configure mac-serve mac-test"
+
+mac-configure: ## (Mac) Point each Hermes at its LiteLLM alias, then restart it
+	@for u in $(HERMES_USERS); do \
+		echo "==> hermes-$$u"; \
+		$(MAC_COMPOSE) exec hermes-$$u sh -c \
+			'hermes config set model.provider custom \
+			&& hermes config set model.base_url "$$LITELLM_BASE_URL" \
+			&& hermes config set model.default "$$LITELLM_MODEL" \
+			&& hermes config set model.api_key "\$${OPENAI_API_KEY}"' \
+		&& $(MAC_COMPOSE) restart hermes-$$u; \
+	done
+
+mac-serve: ## (Mac) Publish both dashboards on the tailnet: https://<mac>:9443 (teodor), :9444 (teodora)
+	"$(TAILSCALE)" serve --bg --https=9443 http://127.0.0.1:19119
+	"$(TAILSCALE)" serve --bg --https=9444 http://127.0.0.1:19120
+	"$(TAILSCALE)" serve status
+
+mac-logins: ## (Mac) Show the Hermex sign-in for each person (server URL, username, password)
+	@. mac/.env && \
+		printf "teodor : %s  user teodor   password %s\n" "$$HERMES_TEODOR_URL" "$$HERMES_TEODOR_PASSWORD" && \
+		printf "teodora: %s  user teodora  password %s\n" "$$HERMES_TEODORA_URL" "$$HERMES_TEODORA_PASSWORD"
+
+mac-test: ## (Mac) Each key reaches its own DeepSeek alias only (one real call per person)
+	./mac/test.sh
+
+mac-status: ## (Mac) Containers, LiteLLM key bootstrap log and what tailscale serve publishes
+	$(MAC_COMPOSE) ps -a
+	$(MAC_COMPOSE) logs --no-log-prefix bootstrap | tail -5
+	"$(TAILSCALE)" serve status
+
+mac-down: ## (Mac) Stop the stack; WIPE=1 also deletes chat history, keys and spend (volumes)
+	$(MAC_COMPOSE) down $(if $(filter 1,$(WIPE)),-v,)
 
 kyverno-test: ## Run the AI Kyverno policies against good/bad fixtures (CLI v1.18.1, as in CI)
 	$(KYVERNO) test policies/kyverno/tests

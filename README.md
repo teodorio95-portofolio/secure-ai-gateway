@@ -161,6 +161,35 @@ and sign in with **Username & password** from
 tailnet on her phone (invite her, or share the `homelab` node with her); a
 Tailscale ACL can limit her to port 9444.
 
+#### Try it on the Mac first
+
+Until the box arrives, [mac/compose.yaml](mac/compose.yaml) runs the same family
+chat in Colima's Docker, outside the k3d lab: Postgres, LiteLLM and both Hermes
+instances. LiteLLM's aliases, budgets and key bootstrap are rendered from the
+same `values/litellm*.yaml` ([mac/render.py](mac/render.py)). The Mac has no
+local model, so a spent $5 budget answers with an error there instead of falling
+back.
+
+The cage matches the cluster's. Hermes sits on a Docker network with no route
+out and reaches only LiteLLM; an nginx TCP proxy publishes the two dashboards on
+`127.0.0.1:19119` / `:19120`, and `tailscale serve` carries them to the tailnet.
+
+```bash
+make mac-secrets     # mac/.env (0600, git-ignored); prompts for the DeepSeek key
+make mac-up          # first start pulls ~1 GB per Hermes image
+make mac-configure   # each Hermes → LiteLLM, model chat-<user>
+make mac-serve       # https://<mac>.<tailnet>.ts.net:9443 (teodor), :9444 (teodora)
+make mac-test        # each key reaches only its own alias (one real call each)
+make mac-logins      # what to type into Hermex
+make mac-down        # WIPE=1 also deletes chat history, keys and spend
+```
+
+Needs Colima running with room for the stack (2 GiB per Hermes, ~1 GiB
+LiteLLM): next to the k3d lab's 10 GiB, give Colima more memory or stop the lab.
+`tailscale serve` needs HTTPS certificates enabled for the tailnet. The admin UI
+is at <http://127.0.0.1:14000/ui> (master key in `mac/.env`). Chat history stays
+in the `family-chat_hermes-*` volumes; it does not move to the homelab.
+
 ## Secrets
 
 Secrets are [Sealed Secrets](https://github.com/bitnami/sealed-secrets)
@@ -265,6 +294,7 @@ secure-ai-gateway/
 │   └── ai-hermes/               # homelab: one Hermes Agent per family member
 ├── values/                      # our values for upstream charts (Sealed Secrets, LiteLLM, Phoenix)
 ├── images/                      # Dockerfiles for the MCP server, agent, Ollama+model
+├── mac/                         # family chat on the Mac (Docker Compose) until the homelab box
 ├── secrets/                     # public sealing cert + SealedSecrets (ciphertext only)
 ├── policies/kyverno/            # AI-specific guardrails (Audit) + kyverno tests
 ├── scripts/                     # lint.sh (same gate locally and in CI), seal-secrets.sh,
