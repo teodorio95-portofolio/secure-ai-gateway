@@ -19,7 +19,8 @@ FAILED=0
 status() {
   local auth=()
   [[ -n "$1" ]] && auth=(-H "Authorization: Bearer $1")
-  curl -s -o /dev/null -w '%{http_code}' -m 60 "$URL/v1/chat/completions" "${auth[@]}" \
+  # ${auth[@]+...}: an empty array is "unbound" under set -u in macOS's bash 3.2.
+  curl -s -o /dev/null -w '%{http_code}' -m 60 "$URL/v1/chat/completions" ${auth[@]+"${auth[@]}"} \
     -H 'Content-Type: application/json' \
     -d "{\"model\": \"$2\", \"max_tokens\": 5, \"messages\": [{\"role\": \"user\", \"content\": \"Spune doar: ok\"}]}"
 }
