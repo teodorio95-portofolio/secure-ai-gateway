@@ -16,12 +16,16 @@ hermes config set model.default "$LITELLM_MODEL"
 hermes config set model.api_key "$key_ref"
 
 # `/model flash` and `/model pro` in a chat (`/model pro --once` for one question).
+# --force: `config set` warns that model_aliases is unrecognized (it is missing
+# from its defaults table), but the /model switcher reads exactly this key
+# (hermes_cli/model_switch.py, _load_direct_aliases); `model_overrides`, the
+# suggested key, is model metadata, not aliases.
 for alias in flash pro; do
   case $alias in
     flash) target=$LITELLM_MODEL ;;
     pro) target=$LITELLM_MODEL-pro ;;
   esac
-  hermes config set "model_aliases.$alias" \
+  hermes config set --force "model_aliases.$alias" \
     "{\"model\": \"$target\", \"provider\": \"custom\", \"base_url\": \"$LITELLM_BASE_URL\", \"api_key\": \"$key_ref\"}"
 done
 echo "configured: default $LITELLM_MODEL, aliases flash -> $LITELLM_MODEL, pro -> $LITELLM_MODEL-pro"
