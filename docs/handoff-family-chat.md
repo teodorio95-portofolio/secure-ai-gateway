@@ -25,7 +25,7 @@ Commit-uri, de la cel mai vechi:
 
 ## Ce face
 
-```
+```text
 iPhone (Hermex) ──Tailscale──► tailscale serve ──► Hermes (unul per persoană)
                                                     │ cheie virtuală LiteLLM proprie
                                                     ▼
@@ -57,6 +57,7 @@ iPhone (Hermex) ──Tailscale──► tailscale serve ──► Hermes (unul 
 ## Fișiere
 
 **Homelab (k3s):**
+
 - `charts/ai-hermes/`: namespace `ai-hermes` (PSA `baseline`, pentru că imaginea oficială pornește ca root sub s6-overlay), PVC, Service ClusterIP fix (`10.43.219.19` / `.20`), Deployment, CiliumNetworkPolicy.
   - Imagine: `docker.io/nousresearch/hermes-agent:v0.22.7@sha256:e6d81ae5…`.
   - Securitate: 7 capabilități, `allowPrivilegeEscalation: false`, fără token de ServiceAccount.
@@ -73,6 +74,7 @@ iPhone (Hermex) ──Tailscale──► tailscale serve ──► Hermes (unul 
 - `Makefile`: `hermes-configure`, `hermes-serve`, `hermes-status`, `check-budget-fallback`.
 
 **Mac (Docker Compose în Colima, separat de lab-ul k3d):**
+
 - `mac/compose.yaml`: Postgres, LiteLLM, bootstrap, `hermes-teodor`, `hermes-teodora`, `edge` (nginx TCP).
   - Hermes e doar pe rețeaua `internal`, fără ieșire spre internet.
   - Porturile sunt publicate doar pe `127.0.0.1`: `19119` / `19120` (dashboard-uri) și `14000` (LiteLLM).
