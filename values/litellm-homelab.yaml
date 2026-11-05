@@ -3,7 +3,7 @@
 #
 # Helm replaces lists wholesale, so model_list and router_settings.fallbacks are
 # repeated in full. Differences from values/litellm.yaml: the `local` entry (the
-# homelab's bigger model) and two DeepSeek aliases per family member. Keep the paid
+# homelab's bigger model) and GPT/DeepSeek aliases per family member. Keep the paid
 # entries in sync with that file.
 proxy_config:
   model_list:
@@ -17,7 +17,25 @@ proxy_config:
       litellm_params:
         model: openai/gpt-6-luna
         api_key: os.environ/OPENAI_API_KEY
-    # -- Two DeepSeek aliases per person: chat-<user> (V4.1 Flash, the default,
+    # -- GPT is the family default, with a separate $5/30d budget per person.
+    # Responses routing is required for this model's tool calling. The pinned
+    # LiteLLM map matches OpenAI's standard and >272k-token rates (2026-11-05).
+    # Force standard service tier so priority pricing cannot consume the budget.
+    - model_name: chat-teodor-gpt
+      litellm_params:
+        model: openai/responses/gpt-6.1-sol
+        api_key: os.environ/OPENAI_API_KEY
+        service_tier: default
+        max_budget: 5.0
+        budget_duration: 30d
+    - model_name: chat-teodora-gpt
+      litellm_params:
+        model: openai/responses/gpt-6.1-sol
+        api_key: os.environ/OPENAI_API_KEY
+        service_tier: default
+        max_budget: 5.0
+        budget_duration: 30d
+    # -- Two DeepSeek aliases per person: chat-<user> (V4.1 Flash,
     # thinking off) and chat-<user>-pro (V4 Pro with thinking, `/model pro` in Hermes). Each has its own
     # monthly budget on the deployment, together $5 a person: once one is spent
     # the router drops it and the request falls back (pro -> flash -> local; a
@@ -82,11 +100,13 @@ proxy_config:
         input_cost_per_token: 0.000001
         output_cost_per_token: 0.000002
   router_settings:
-    # Paid → cheaper paid → local, and each person's DeepSeek → local (budget
+    # Paid → cheaper paid → local, and each person's GPT → Flash → local (budget
     # spent or DeepSeek down). Repeats values/litellm.yaml's list in full.
     fallbacks:
       - default: [cheap, local]
       - cheap: [local]
+      - chat-teodor-gpt: [chat-teodor, local]
+      - chat-teodora-gpt: [chat-teodora, local]
       - chat-teodor: [local]
       - chat-teodor-pro: [chat-teodor, local]
       - chat-teodora: [local]

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end checks of the Mac stack through LiteLLM on 127.0.0.1:14000, with the
-# keys from mac/.env (never printed). Two real DeepSeek calls per person (flash
-# and pro, 5 tokens each): a fraction of a cent.
-#   own key  -> own aliases     200 (DeepSeek answers)
+# keys from mac/.env (never printed). Three real calls per person (GPT, Flash,
+# Pro; 16 tokens each): a fraction of a cent.
+#   own key  -> own aliases     200 (the provider answers)
 #   own key  -> other's aliases refused (each key only allows its own)
 #   no key                     refused
 set -uo pipefail
@@ -20,9 +20,10 @@ status() {
   local auth=()
   [[ -n "$1" ]] && auth=(-H "Authorization: Bearer $1")
   # ${auth[@]+...}: an empty array is "unbound" under set -u in macOS's bash 3.2.
+  # 16: the Responses API (GPT) rejects max_output_tokens below 16.
   curl -s -o /dev/null -w '%{http_code}' -m 60 "$URL/v1/chat/completions" ${auth[@]+"${auth[@]}"} \
     -H 'Content-Type: application/json' \
-    -d "{\"model\": \"$2\", \"max_tokens\": 5, \"messages\": [{\"role\": \"user\", \"content\": \"Spune doar: ok\"}]}"
+    -d "{\"model\": \"$2\", \"max_tokens\": 16, \"messages\": [{\"role\": \"user\", \"content\": \"Spune doar: ok\"}]}"
 }
 
 # check <description> <got> <want: 200 | refused>
@@ -34,6 +35,9 @@ check() {
   printf "%s  %-40s expected %-8s got %s\n" "$verdict" "$1" "$3" "$got"
 }
 
+check "teodor  -> chat-teodor-gpt"  "$(status "$TEODOR_KEY" chat-teodor-gpt)" 200
+check "teodora -> chat-teodora-gpt" "$(status "$TEODORA_KEY" chat-teodora-gpt)" 200
+check "teodor  -> chat-teodora-gpt" "$(status "$TEODOR_KEY" chat-teodora-gpt)" refused
 check "teodor  -> chat-teodor"      "$(status "$TEODOR_KEY" chat-teodor)" 200
 check "teodor  -> chat-teodor-pro"  "$(status "$TEODOR_KEY" chat-teodor-pro)" 200
 check "teodora -> chat-teodora"     "$(status "$TEODORA_KEY" chat-teodora)" 200

@@ -1,9 +1,8 @@
-"""Offline proof that spent per-person DeepSeek budgets fall back: pro -> flash -> local.
+"""Offline proof that per-person GPT and DeepSeek budgets fall back independently.
 
 Builds a LiteLLM Router from the homelab's own model_list and fallbacks
 (values/litellm-homelab.yaml) with mocked answers, so no key or network is
-needed. Both of teodor's aliases get a near-zero budget, so each serves one
-call: pro, then flash, then `local` for everything; teodora is untouched.
+needed. Teodor's aliases get near-zero budgets; Teodora is untouched.
 
     make check-budget-fallback    # runs it against the pinned LiteLLM
 """
@@ -25,11 +24,18 @@ VALUES = Path(__file__).resolve().parents[1] / "values" / "litellm-homelab.yaml"
 def router_from_values() -> Router:
     cfg = yaml.safe_load(VALUES.read_text())["proxy_config"]
     model_list = copy.deepcopy(cfg["model_list"])
+    for user in ("teodor", "teodora"):
+        gpt = next(entry for entry in model_list if entry["model_name"] == f"chat-{user}-gpt")
+        assert gpt["litellm_params"]["model"] == "openai/responses/gpt-6.1-sol"
+        assert gpt["litellm_params"]["max_budget"] == 5.0
+        assert gpt["litellm_params"]["api_key"] == "os.environ/OPENAI_API_KEY"
+        fallback = next(row[f"chat-{user}-gpt"] for row in cfg["router_settings"]["fallbacks"] if f"chat-{user}-gpt" in row)
+        assert fallback == [f"chat-{user}", "local"]
     for entry in model_list:
         params = entry["litellm_params"]
         params["mock_response"] = f"served by {entry['model_name']}"
         params["api_key"] = "sk-offline"
-        if entry["model_name"] in ("chat-teodor", "chat-teodor-pro"):
+        if entry["model_name"] in ("chat-teodor", "chat-teodor-pro", "chat-teodor-gpt"):
             params["max_budget"] = 0.000001  # spent after one call
     return Router(model_list=model_list, fallbacks=cfg["router_settings"]["fallbacks"], num_retries=0)
 
@@ -42,12 +48,17 @@ async def main() -> int:
         await asyncio.sleep(0.3)  # spend is recorded by an async success callback
         return reply.choices[0].message.content
 
-    calls = ["chat-teodor-pro"] * 3 + ["chat-teodor", "chat-teodora", "chat-teodora-pro"]
+    calls = ["chat-teodor-gpt"] * 2 + ["chat-teodor-pro"] * 2 + [
+        "chat-teodor-gpt", "chat-teodor", "chat-teodora-gpt", "chat-teodora", "chat-teodora-pro"
+    ]
     want = [
+        "served by chat-teodor-gpt",  # GPT has budget
+        "served by chat-teodor",  # GPT spent -> flash
         "served by chat-teodor-pro",  # pro has budget
-        "served by chat-teodor",  # pro spent -> flash
-        "served by local",  # flash spent too -> local
+        "served by local",  # pro and flash spent -> local
         "served by local",
+        "served by local",
+        "served by chat-teodora-gpt",  # the other person's GPT is unaffected
         "served by chat-teodora",  # the other person keeps DeepSeek
         "served by chat-teodora-pro",
     ]

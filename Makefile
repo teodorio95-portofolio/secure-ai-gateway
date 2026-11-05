@@ -31,7 +31,7 @@ TAILSCALE   ?= $(shell command -v tailscale 2>/dev/null || echo /Applications/Ta
 .PHONY: help wire-lab apps-status verify-namespaces sealing-key sealing-key-install \
 	seal-secrets verify-secrets build-images gateway-ui gateway-test gateway-bootstrap traces-ui \
 	agent-ask verify-ai-netpol kyverno-test lint secrets-scan wire-lab-homelab homelab-images \
-	hermes-configure hermes-serve hermes-status check-budget-fallback \
+	hermes-configure hermes-serve hermes-status check-budget-fallback check-hermes-configure \
 	mac-secrets mac-render mac-up mac-configure mac-serve mac-logins mac-test mac-status mac-down
 
 help: ## Show this help
@@ -152,6 +152,9 @@ hermes-serve: ## (homelab) Publish each Hermes dashboard on the tailnet with `ta
 hermes-status: ## (homelab) Hermes pods, their volumes and what tailscale serve publishes
 	kubectl -n ai-hermes get pods,pvc,svc -o wide
 	ssh $(HOMELAB_USER)@$(HOMELAB_HOST) tailscale serve status
+
+check-hermes-configure: ## Offline: verify each Hermes picker lists only its own Flash and Pro models
+	python3 scripts/test-hermes-configure.py
 
 check-budget-fallback: ## Offline: prove a spent per-person DeepSeek budget falls back to `local` (pinned LiteLLM)
 	uv run --no-project --with litellm==$(LITELLM_PIN) python scripts/check-budget-fallback.py

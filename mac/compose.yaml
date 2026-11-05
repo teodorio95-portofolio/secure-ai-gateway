@@ -67,6 +67,7 @@ services:
       DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD}@postgres:5432/litellm
       PROXY_MASTER_KEY: ${PROXY_MASTER_KEY:?run make mac-secrets}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?run make mac-secrets}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY in mac/.env}
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
     volumes:
       - ./.generated/litellm-config.yaml:/app/config.yaml:ro

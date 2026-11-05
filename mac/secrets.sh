@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Generate mac/.env for the Mac test stack once (mode 0600, git-ignored):
 # LiteLLM master key + Postgres password, each person's virtual key and Hermes
-# dashboard login, and the DeepSeek API key (from $DEEPSEEK_API_KEY or a hidden
-# prompt). Values are never printed; `make mac-logins` shows the two logins.
+# dashboard login, and provider keys (from the environment or hidden prompts).
+# An existing file only gains a missing OpenAI key; existing secrets stay intact.
+# Values are never printed; `make mac-logins` shows the two logins.
 #
 # The tailnet name of this Mac (auto-detected, or MAC_TAILNET_HOST=...) sets
 # each dashboard's public URL to what Hermex will open: https://<mac>:9443 / :9444.
@@ -14,7 +15,23 @@ set -euo pipefail
 ENV_FILE="${ENV_FILE:-$(cd "$(dirname "$0")" && pwd)/.env}"
 TAILSCALE="${TAILSCALE:-tailscale}"
 
+read_openai_key() {
+  openai="${OPENAI_API_KEY:-}"
+  if [[ -z "$openai" ]]; then
+    read -rsp "OpenAI API key (input hidden): " openai
+    echo
+  fi
+  # The file is sourced by other scripts; reject shell syntax in a credential.
+  [[ "$openai" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "invalid OpenAI API key format" >&2; exit 1; }
+}
+
 if [[ -f "$ENV_FILE" && "${ROTATE:-0}" != "1" ]]; then
+  if ! (unset OPENAI_API_KEY; . "$ENV_FILE"; [[ -n "${OPENAI_API_KEY:-}" ]]); then
+    read_openai_key
+    chmod 600 "$ENV_FILE"
+    printf '\nOPENAI_API_KEY=%s\n' "$openai" >> "$ENV_FILE"
+    echo "added   OpenAI API key (existing secrets unchanged)"
+  fi
   echo "kept    $ENV_FILE (ROTATE=1 for new values, after make mac-down WIPE=1)"
   exit 0
 fi
@@ -25,6 +42,7 @@ if [[ -z "$deepseek" ]]; then
   echo
 fi
 [[ -n "$deepseek" ]] || { echo "no DeepSeek API key given" >&2; exit 1; }
+read_openai_key
 
 host="${MAC_TAILNET_HOST:-}"
 if [[ -z "$host" ]] && command -v "$TAILSCALE" >/dev/null 2>&1; then
@@ -46,6 +64,7 @@ cat >"$ENV_FILE.tmp" <<EOF
 POSTGRES_PASSWORD=$(rand 24)
 PROXY_MASTER_KEY=sk-$(rand 24)
 DEEPSEEK_API_KEY=$deepseek
+OPENAI_API_KEY=$openai
 TEODOR_KEY=sk-$(rand 24)
 TEODORA_KEY=sk-$(rand 24)
 HERMES_TEODOR_PASSWORD=$(rand 16)
